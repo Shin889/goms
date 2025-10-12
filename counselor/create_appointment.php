@@ -31,10 +31,15 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     $appointment_code = "APT-" . date("Y") . "-" . rand(1000,9999);
 
     $stmt = $conn->prepare("
-      INSERT INTO appointments (appointment_code, requested_by_user_id, student_id, counselor_id, referral_id, start_time, end_time, mode, notes, status)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'confirmed')
+      INSERT INTO appointments (appointment_code, requested_by_user_id, student_id, counselor_id, start_time, end_time, mode, status, notes)
+      VALUES (?, ?, ?, ?, ?, ?, ?, 'confirmed', ?)
     ");
-    $stmt->bind_param("siiiissss", $appointment_code, $counselor_id, $student_id, $counselor_id, $referral_id, $start, $end, $mode, $notes);
+    
+    if ($stmt === false) {
+        die("Prepare failed: " . $conn->error);
+    }
+    
+    $stmt->bind_param("siiiisss", $appointment_code, $counselor_id, $student_id, $counselor_id, $start, $end, $mode, $notes);
 
     if ($stmt->execute()) {
         logAction($counselor_id, 'Create Appointment', 'appointments', $stmt->insert_id, "From referral #$referral_id");
@@ -63,33 +68,200 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <title>Book Appointment - GOMS</title>
-  <link rel="stylesheet" href="../assets/css/style.css">
+    <meta charset="UTF-8">
+    <title>Book Appointment - GOMS</title>
+    <link rel="stylesheet" href="../utils/css/root.css"> <!-- Global root vars -->
+    <style>
+        body {
+            margin: 0;
+            font-family: var(--font-family);
+            background: var(--color-bg);
+            color: var(--color-text);
+            min-height: 100vh;
+            padding: 40px;
+            box-sizing: border-box;
+        }
+
+        .page-container {
+            max-width: 800px;
+            margin: 0 auto;
+        }
+
+        h2.page-title {
+            font-size: 1.6rem;
+            color: var(--color-primary);
+            font-weight: 700;
+            margin-bottom: 4px;
+        }
+
+        p.page-subtitle {
+            color: var(--color-muted);
+            font-size: 0.95rem;
+            margin-bottom: 20px;
+        }
+
+        a.back-link {
+            display: inline-block;
+            margin-bottom: 20px;
+            color: var(--color-secondary);
+            text-decoration: none;
+            font-weight: 600;
+            transition: color 0.2s ease;
+            font-size: 0.95rem;
+        }
+
+        a.back-link:hover {
+            color: var(--color-primary);
+        }
+
+        .card {
+            background: var(--color-surface);
+            border: 1px solid var(--color-border);
+            border-radius: 14px;
+            box-shadow: var(--shadow-sm);
+            padding: 30px;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        label {
+            display: block;
+            color: var(--color-secondary);
+            font-weight: 600;
+            font-size: 0.9rem;
+            margin-bottom: 8px;
+            text-transform: uppercase;
+            letter-spacing: 0.3px;
+        }
+
+        input[type="datetime-local"],
+        select,
+        textarea {
+            width: 100%;
+            padding: 12px 14px;
+            border: 1px solid var(--color-border);
+            border-radius: 8px;
+            background: var(--color-bg);
+            color: var(--color-text);
+            font-size: 0.95rem;
+            font-family: var(--font-family);
+            transition: border-color 0.2s ease, box-shadow 0.2s ease;
+            box-sizing: border-box;
+        }
+
+        input[type="datetime-local"]:focus,
+        select:focus,
+        textarea:focus {
+            outline: none;
+            border-color: var(--color-primary);
+            box-shadow: 0 0 0 3px rgba(0, 123, 255, 0.1);
+        }
+
+        textarea {
+            resize: vertical;
+            min-height: 100px;
+        }
+
+        select {
+            cursor: pointer;
+            appearance: none;
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23666' d='M6 9L1 4h10z'/%3E%3C/svg%3E");
+            background-repeat: no-repeat;
+            background-position: right 14px center;
+            padding-right: 40px;
+        }
+
+        .btn-submit {
+            width: 100%;
+            padding: 14px 20px;
+            background: var(--color-primary);
+            color: #fff;
+            border: none;
+            border-radius: 8px;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            margin-top: 10px;
+        }
+
+        .btn-submit:hover {
+            background: var(--color-primary-dark, #0056b3);
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0, 123, 255, 0.3);
+        }
+
+        .btn-submit:active {
+            transform: translateY(0);
+        }
+
+        .student-info {
+            background: rgba(0, 123, 255, 0.05);
+            border-left: 4px solid var(--color-primary);
+            padding: 14px 18px;
+            border-radius: 8px;
+            margin-bottom: 24px;
+        }
+
+        .student-info .label {
+            font-size: 0.8rem;
+            color: var(--color-muted);
+            text-transform: uppercase;
+            font-weight: 600;
+            letter-spacing: 0.5px;
+            margin-bottom: 4px;
+        }
+
+        .student-info .value {
+            font-size: 1.1rem;
+            color: var(--color-primary);
+            font-weight: 700;
+        }
+    </style>
 </head>
 <body>
-  <h2>Book Appointment for <?= htmlspecialchars($ref['first_name'].' '.$ref['last_name']); ?></h2>
-  <a href="referrals.php">← Back to Referrals</a>
-  <hr>
+    <div class="page-container">
+        <a href="referrals.php" class="back-link">← Back to Referrals</a>
+        
+        <h2 class="page-title">Book Appointment</h2>
+        <p class="page-subtitle">Schedule a counseling session for the referred student.</p>
 
-  <form method="POST" action="">
-      <label>Start Time:</label><br>
-      <input type="datetime-local" name="start_time" required><br><br>
+        <div class="card">
+            <div class="student-info">
+                <div class="label">Student</div>
+                <div class="value"><?= htmlspecialchars($ref['first_name'].' '.$ref['last_name']); ?></div>
+            </div>
 
-      <label>End Time:</label><br>
-      <input type="datetime-local" name="end_time" required><br><br>
+            <form method="POST" action="">
+                <div class="form-group">
+                    <label>Start Time</label>
+                    <input type="datetime-local" name="start_time" required>
+                </div>
 
-      <label>Mode:</label><br>
-      <select name="mode">
-          <option value="in-person">In-person</option>
-          <option value="online">Online</option>
-          <option value="phone">Phone</option>
-      </select><br><br>
+                <div class="form-group">
+                    <label>End Time</label>
+                    <input type="datetime-local" name="end_time" required>
+                </div>
 
-      <label>Notes:</label><br>
-      <textarea name="notes" rows="3" cols="50"></textarea><br><br>
+                <div class="form-group">
+                    <label>Mode</label>
+                    <select name="mode" required>
+                        <option value="in-person">In-person</option>
+                        <option value="online">Online</option>
+                        <option value="phone">Phone</option>
+                    </select>
+                </div>
 
-      <button type="submit">Confirm Appointment</button>
-  </form>
+                <div class="form-group">
+                    <label>Notes</label>
+                    <textarea name="notes" placeholder="Add any additional notes or instructions..."></textarea>
+                </div>
+
+                <button type="submit" class="btn-submit">Confirm Appointment</button>
+            </form>
+        </div>
+    </div>
 </body>
 </html>

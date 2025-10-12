@@ -52,9 +52,9 @@ $counselor = $result->fetch_assoc();
     <a href="#" class="nav-link" data-page="sessions.php">
       <span class="icon">💬</span><span class="label">Conduct Sessions</span>
     </a>
-    <a href="#" class="nav-link" data-page="reports.php">
+    <!-- <a href="#" class="nav-link" data-page="reports.php">
       <span class="icon">📊</span><span class="label">View Reports</span>
-    </a>
+    </a> -->
 
     <a href="../auth/logout.php" class="logout-link">Logout</a>
   </nav>
