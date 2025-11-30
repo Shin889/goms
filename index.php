@@ -1,13 +1,11 @@
 <?php
 session_start();
 
-// If not logged in, go to the page with both login and register options
 if (!isset($_SESSION['role'])) {
     header("Location: auth/index.php");
     exit;
 }
 
-// Redirect to correct dashboard based on role
 switch ($_SESSION['role']) {
     case 'admin':
         header("Location: admin/dashboard.php");
@@ -18,9 +16,9 @@ switch ($_SESSION['role']) {
     case 'adviser':
         header("Location: adviser/dashboard.php");
         break;
-    case 'student':
+    /* case 'student':
         header("Location: student/dashboard.php");
-        break;
+        break; */
     /* case 'guardian':
         header("Location: guardian/dashboard.php");
         break; */

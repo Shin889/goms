@@ -1,91 +1,164 @@
+/* ------------------------------------------- */
+/* --- DASHBOARD LAYOUT & NAVIGATION STYLES --- */
+/* ------------------------------------------- */
+
 body {
-  margin: 0;
-  font-family: var(--font-family);
-  background: var(--color-bg);
-  color: var(--color-text);
-  min-height: 100vh;
-  display: flex;
+    margin: 0;
+    font-family: var(--font-family);
+    background: var(--clr-bg); 
+    color: var(--clr-text); 
+    min-height: 100vh;
+    display: flex;
+  
 }
 
+/* ------------------------------------------- */
+/* 1. Sidebar Structure */
+/* ------------------------------------------- */
+
 .sidebar {
-  width: var(--sidebar-width);
-  background: var(--color-surface);
-  padding: 20px;
-  box-sizing: border-box;
-  position: fixed;
-  top: 0; left: 0; bottom: 0;
-  display: flex;
-  flex-direction: column;
+    width: var(--layout-sidebar-width); 
+    background: var(--clr-surface); 
+    padding: 20px;
+    box-sizing: border-box;
+    position: fixed;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    display: flex;
+    flex-direction: column;
+    box-shadow: var(--shadow-sm); 
+    transition: width var(--time-transition), transform var(--time-transition);
+    z-index: 10;
 }
 
 .sidebar .logo {
-  margin: 0 0 16px;
-  font-size: 1.2rem;
-  font-weight: 700;
-  color: var(--color-primary);
+    margin: 0 0 20px;
+    font-size: var(--fs-subheading);
+    font-weight: 700;
+    color: var(--clr-primary); 
+    display: flex;
+    align-items: center;
 }
 
 .sidebar-user {
-  margin-bottom: 20px;
-  font-size: 0.9rem;
-  color: var(--color-muted);
+    margin-bottom: 25px;
+    font-size: var(--fs-small);
+    color: var(--clr-muted);
+    padding: 10px 14px; 
+    border-bottom: 1px solid var(--clr-border);
 }
 
+/* ------------------------------------------- */
+/* 2. Navigation Links */
+/* ------------------------------------------- */
+
 .nav-link {
-  display: flex;
-  align-items: center;
-  padding: 10px 14px;
-  border-radius: 10px;
-  text-decoration: none;
-  color: var(--color-text);
-  transition: background 0.2s ease;
-  margin-bottom: 6px;
+    display: flex;
+    align-items: center;
+    padding: 12px 14px; 
+    border-radius: var(--radius-md);
+    text-decoration: none;
+    color: var(--clr-text);
+    transition: all var(--time-transition);
+    margin-bottom: 8px;
+    font-weight: 500;
+}
+
+.nav-link i {
+    margin-right: 12px;
+    font-size: 1.1rem;
 }
 
 .nav-link.active, .nav-link:hover {
-  background: var(--color-primary);
-  color: #fff;
+    background: var(--clr-primary);
+    color: #fff;
+}
+
+.nav-link.active i, .nav-link:hover i {
+    color: #fff;
 }
 
 .logout-link {
-  margin-top: auto;
-  color: #f87171;
-  text-decoration: none;
-  font-weight: 600;
+    margin-top: auto; 
+    display: flex;
+    align-items: center;
+    padding: 12px 14px;
+    color: var(--clr-error); 
+    text-decoration: none;
+    font-weight: 600;
+    border-radius: var(--radius-md);
+    transition: all var(--time-transition);
 }
+
+.logout-link:hover {
+    background: var(--clr-error);
+    color: #fff;
+}
+
+.logout-link i {
+    margin-right: 12px;
+}
+
+
+/* ------------------------------------------- */
+/* 3. Main Content Area */
+/* ------------------------------------------- */
 
 main.content {
-  margin-left: var(--sidebar-width);
-  padding: 30px;
-  transition: margin-left var(--transition);
-  width: 100%;
-  box-sizing: border-box;
-  min-height: 100vh;
+    /* Offset by the sidebar width */
+    margin-left: var(--layout-sidebar-width); 
+    padding: 30px;
+    transition: margin-left var(--time-transition); 
+    width: 100%;
+    box-sizing: border-box;
+    min-height: 100vh;
+    flex-grow: 1; 
 }
 
+/* Utility Styles */
 .loading {
-  text-align: center;
-  color: var(--color-muted);
-  padding: 40px;
+    text-align: center;
+    color: var(--clr-muted); 
+    padding: 40px;
 }
 
 .error {
-  text-align: center;
-  color: #ef4444;
-  padding: 40px;
+    text-align: center;
+    color: var(--clr-error); 
+    padding: 40px;
 }
 
-@media (max-width: 640px) {
-  .sidebar {
-    position: fixed;
-    left: -100%;
-    transition: left 0.3s;
-  }
-  body.sidebar-open .sidebar {
-    left: 0;
-  }
-  main.content {
-    margin-left: 0;
-    padding-top: 80px;
-  }
+/* ------------------------------------------- */
+/* 4. Responsiveness (Mobile View) */
+/* ------------------------------------------- */
+
+@media (max-width: 768px) { 
+    .sidebar {
+        position: fixed;
+        left: calc(0px - var(--layout-sidebar-width));
+        transform: translateX(0);
+        box-shadow: var(--shadow-lg); 
+    }
+
+    body.sidebar-open .sidebar {
+        left: 0;
+        transform: translateX(0);
+    }
+    
+    body.sidebar-open::after {
+        content: '';
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: rgba(0, 0, 0, 0.5);
+        z-index: 5;
+    }
+
+    main.content {
+        margin-left: 0; 
+        padding-top: 20px; 
+    }
 }

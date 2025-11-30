@@ -1,138 +1,142 @@
 :root {
-  /* 🎨 Core Colors - Dark Theme */
-  --color-primary: #a855f7;        /* Brighter violet for dark bg */
-  --color-secondary: #fb923c;      /* Softer orange for contrast */
-  --color-bg: #0f0f14;             /* Deep dark background */
-  --color-surface: #1a1a24;        /* Elevated surface */
-  --color-text: #e5e5ea;           /* Light text */
-  --color-muted: #9ca3af;          /* Muted/secondary text */
-  --color-border: #2d2d3a;         /* Subtle border */
-  --color-accent: #1e1428;         /* Deep violet tint background */
+  --clr-bg: #ffffff;             
+  --clr-surface: #f7f7f7;       
+  --clr-text: #2d3748;          
+  --clr-muted: #718096;       
+  --clr-border: #e2e8f0;         
   
-  /* 🌈 State Colors */
-  --color-success: #34d399;
-  --color-error: #f87171;
-  --color-warning: #fbbf24;
-  --color-info: #a855f7;
+  --clr-primary: #10b981;        
+  --clr-secondary: #059669;      
+  --clr-accent: #edf2f7;        
+
+  /* Status Colors */
+  --clr-success: #059669;
+  --clr-error: #f87171;
+  --clr-warning: #fbbf24;
+  --clr-info: #3b82f6;
   
-  /* 🧩 Typography */
+  /* --- TYPOGRAPHY --- */
   --font-family: "Inter", "Poppins", "Segoe UI", sans-serif;
-  --font-size-base: 16px;
-  --font-size-heading: 1.75rem;
-  --font-size-subheading: 1.25rem;
-  --font-size-small: 0.875rem;
+  --fs-base: 16px;
+  --fs-heading: 1.75rem;
+  --fs-subheading: 1.25rem;
+  --fs-small: 0.875rem;
   
-  /* 📦 Layout and Spacing */
+  /* --- SPACING & UTILITIES --- */
   --radius-sm: 6px;
   --radius-md: 12px;
   --radius-lg: 20px;
-  --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.4);
-  --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.5);
-  --shadow-lg: 0 8px 30px rgba(0, 0, 0, 0.6);
-  --transition: 0.3s ease;
+  
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.1), 0 1px 2px rgba(0, 0, 0, 0.06); 
+  --shadow-md: 0 4px 6px rgba(0, 0, 0, 0.1), 0 2px 4px rgba(0, 0, 0, 0.06);
+  --shadow-lg: 0 10px 15px rgba(0, 0, 0, 0.1), 0 4px 6px rgba(0, 0, 0, 0.05);
+  
+  --time-transition: 0.3s ease; 
+
+  /* --- LAYOUT DIMENSIONS --- */
+  --layout-sidebar-width: 260px; 
+  --layout-sidebar-collapsed-width: 72px; 
 }
 
-/* 🧠 Example usage */
+/* -------------------------------------- */
+/* 1. Global Styles and Typography        */
+/* -------------------------------------- */
+
 body {
   font-family: var(--font-family);
-  font-size: var(--font-size-base);
-  background-color: var(--color-bg);
-  color: var(--color-text);
+  font-size: var(--fs-base);
+  background-color: var(--clr-bg); 
+  color: var(--clr-text); 
   margin: 0;
   padding: 0;
 }
 
-/* Buttons */
+h1, h2, h3, h4 {
+  color: var(--clr-primary); 
+  font-weight: 600;
+}
+
+a {
+  color: var(--clr-secondary); 
+  text-decoration: none;
+  transition: color var(--time-transition);
+}
+
+a:hover {
+  color: var(--clr-primary); 
+}
+
+/* -------------------------------------- */
+/* 2. Component: Buttons                  */
+/* -------------------------------------- */
+
 .btn {
-  background: var(--color-primary);
+  background: var(--clr-primary);
   color: #fff;
   padding: 12px 20px;
   border: none;
   border-radius: var(--radius-md);
   cursor: pointer;
   font-weight: 500;
-  transition: var(--transition);
+  transition: all var(--time-transition);
 }
 
 .btn:hover {
-  background: var(--color-secondary);
-  box-shadow: 0 4px 12px rgba(168, 85, 247, 0.3);
+  background: var(--clr-secondary);
+  box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3); 
 }
 
-/* Secondary (outline) button */
 .btn-outline {
   background: transparent;
-  border: 2px solid var(--color-primary);
-  color: var(--color-primary);
+  border: 2px solid var(--clr-primary);
+  color: var(--clr-primary);
 }
 
 .btn-outline:hover {
-  background: var(--color-primary);
+  background: var(--clr-primary);
   color: #fff;
-  box-shadow: 0 4px 12px rgba(168, 85, 247, 0.3);
+  box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);
 }
 
-/* Headings */
-h1, h2, h3, h4 {
-  color: var(--color-primary);
-  font-weight: 600;
-}
+/* -------------------------------------- */
+/* 3. Component: Card                     */
+/* -------------------------------------- */
 
-/* Links */
-a {
-  color: var(--color-secondary);
-  text-decoration: none;
-  transition: var(--transition);
-}
-
-a:hover {
-  color: var(--color-primary);
-}
-
-/* Card Example */
 .card {
-  background: var(--color-surface);
+  background: var(--clr-surface);
   border-radius: var(--radius-md);
   box-shadow: var(--shadow-sm);
   padding: 20px;
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--clr-border);
 }
 
 .card:hover {
   box-shadow: var(--shadow-md);
-  border-color: var(--color-primary);
+  border-color: var(--clr-primary); 
 }
 
-/* ============================= */
-/* 🌙 SIDEBAR (global) - add/replace this block in root.css */
-/* ============================= */
+/* -------------------------------------- */
+/* 4. Component: Sidebar                  */
+/* -------------------------------------- */
 
-/* small helper widths */
-:root {
-  --sidebar-width: 260px;
-  --sidebar-collapsed-width: 72px;
-}
-
-/* Sidebar container */
 .sidebar {
   position: fixed;
   left: 0;
   top: 0;
   height: 100vh;
-  width: var(--sidebar-width);
+  width: var(--layout-sidebar-width); 
   display: flex;
   flex-direction: column;
   gap: 10px;
   padding: 26px 16px;
-  background: var(--color-surface);
-  border-right: 1px solid var(--color-border);
+  background: var(--clr-surface);
+  border-right: 1px solid var(--clr-border);
   box-shadow: var(--shadow-sm);
-  transition: width var(--transition), background var(--transition);
+  transition: width var(--time-transition), background var(--time-transition); 
   z-index: 1000;
   overflow: visible;
 }
 
-/* toggle button (circle) */
 .sidebar .toggle-btn {
   position: absolute;
   right: -18px;
@@ -143,18 +147,17 @@ a:hover {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  color: var(--color-text);
+  background: var(--clr-surface);
+  border: 1px solid var(--clr-border);
+  color: var(--clr-text);
   cursor: pointer;
   box-shadow: var(--shadow-sm);
 }
 
-/* logo + small user area */
 .sidebar h2.logo {
   margin: 0 0 8px 0;
   font-size: 1.2rem;
-  color: var(--color-primary);
+  color: var(--clr-primary);
   font-weight: 700;
   text-align: left;
   padding-left: 6px;
@@ -162,81 +165,73 @@ a:hover {
 }
 
 .sidebar .sidebar-user {
-  color: var(--color-muted);
+  color: var(--clr-muted);
   font-size: 0.95rem;
   padding-left: 6px;
   margin-bottom: 8px;
 }
 
-/* nav links (flex to support icon + label) */
 .sidebar a {
   display: flex;
   align-items: center;
   gap: 10px;
   padding: 10px 12px;
   text-decoration: none;
-  color: var(--color-text);
+  color: var(--clr-text);
   border-radius: var(--radius-md);
   border: 1px solid transparent;
   font-weight: 500;
-  transition: background var(--transition), color var(--transition), transform var(--transition);
+  transition: background var(--time-transition), color var(--time-transition), transform var(--time-transition);
   white-space: nowrap;
 }
 
-/* optional icon span — if present it will show */
 .sidebar a .icon {
   min-width: 28px;
   text-align: center;
   font-size: 1.05rem;
 }
 
-/* label wrapper — can be hidden when collapsed */
 .sidebar a .label {
   display: inline-block;
 }
 
-/* hover + active */
 .sidebar a:hover {
-  background: var(--color-accent);
-  color: var(--color-secondary);
+  background: var(--clr-accent); 
+  color: var(--clr-primary);
 }
 
 .sidebar a.active {
-  background: var(--color-primary);
+  background: var(--clr-primary);
   color: #fff;
   font-weight: 700;
-  border-color: rgba(168,85,247,0.08);
+  border-color: rgba(16, 185, 129, 0.08); 
 }
 
-/* logout link pinned to bottom */
 .sidebar .logout-link {
   margin-top: auto;
   display: block;
   padding: 10px 12px;
   text-align: center;
-  color: var(--color-error);
+  color: var(--clr-error);
   text-decoration: none;
   border-radius: var(--radius-md);
   border: 1px solid transparent;
-  transition: all var(--transition);
+  transition: all var(--time-transition);
 }
 
 .sidebar .logout-link:hover {
-  color: var(--color-warning);
-  background: rgba(255,255,255,0.02);
-  border-color: var(--color-border);
+  color: var(--clr-warning);
+  background: var(--clr-accent);
+  border-color: var(--clr-border);
 }
 
-/* ========== COLLAPSED STATE ========== */
 .sidebar.collapsed {
-  width: var(--sidebar-collapsed-width);
+  width: var(--layout-sidebar-collapsed-width);
 }
 
-/* hide the user small text and reduce logo size */
 .sidebar.collapsed .sidebar-user { display: none; }
 .sidebar.collapsed h2.logo { font-size: 0.95rem; text-align: center; padding-left: 0; }
 
-/* center anchors, hide labels if they exist (keeps icons visible) */
 .sidebar.collapsed a {
   justify-content: center;
   padding-left: 6px;
@@ -244,12 +239,9 @@ a:hover {
 }
 .sidebar.collapsed a .label { display: none; }
 
-/* collapsed toggle button slight reposition */
 .sidebar.collapsed .toggle-btn { right: -18px; }
 
-/* ========== RESPONSIVE ========== */
 @media (max-width: 900px) {
-  .sidebar { width: var(--sidebar-collapsed-width); }
+  .sidebar { width: var(--layout-sidebar-collapsed-width); }
   .sidebar .sidebar-user { display: none; }
-  /* If you prefer the sidebar to be full-top bar on very small, the page-specific css will handle content margin */
 }

@@ -12,10 +12,10 @@ switch ($_SESSION['role']) {
         header('Location: counselor/dashboard.php'); break;
     case 'adviser':
         header('Location: adviser/dashboard.php'); break;
-    case 'student':
+    /* case 'student':
         header('Location: student/dashboard.php'); break;
     case 'guardian':
-        header('Location: guardian/dashboard.php'); break;
+        header('Location: guardian/dashboard.php'); break; */
 }
 exit;
 ?>

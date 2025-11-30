@@ -29,14 +29,14 @@ if (isset($_SESSION['role'])) {
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Welcome | Login or Register</title>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
-    <!-- Link to global root CSS -->
     <link rel="stylesheet" href="../utils/css/root.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
 
     <style>
         body {
             margin: 0;
-            background: var(--color-bg);
-            color: var(--color-text);
+            background: var(--clr-bg); 
+            color: var(--clr-text); 
             height: 100vh;
             display: flex;
             justify-content: center;
@@ -44,27 +44,40 @@ if (isset($_SESSION['role'])) {
         }
 
         .container {
-            background: var(--color-surface);
-            color: var(--color-text);
+            background: var(--clr-surface); 
+            color: var(--clr-text);
             text-align: center;
             border-radius: var(--radius-lg);
             padding: 40px 30px;
             width: 100%;
             max-width: 420px;
             box-shadow: var(--shadow-md);
+            border: 1px solid var(--clr-border); 
+            transition: all var(--time-transition);
         }
+
+        .container:hover {
+            border-color: var(--clr-primary);
+        }
+        
+        .logo-img {
+            max-width: 80px; 
+            height: auto;
+            margin-bottom: 15px;
+        }
+
 
         h1 {
             margin-bottom: 10px;
-            color: var(--color-primary);
-            font-size: var(--font-size-heading);
-            font-weight: 600;
+            color: var(--clr-primary); 
+            font-size: var(--fs-heading);
+            font-weight: 700;
         }
 
         p {
-            color: var(--color-muted);
+            color: var(--clr-muted); 
             margin-bottom: 30px;
-            font-size: var(--font-size-small);
+            font-size: var(--fs-small); 
         }
 
         .buttons {
@@ -77,30 +90,32 @@ if (isset($_SESSION['role'])) {
         .btn {
             display: inline-block;
             text-decoration: none;
-            background: var(--color-primary);
+            background: var(--clr-primary); 
             color: #fff;
             padding: 12px 24px;
             border-radius: var(--radius-md);
             font-weight: 500;
-            transition: var(--transition);
+            transition: all var(--time-transition); 
+            border: 2px solid transparent;
         }
 
         .btn:hover {
-            background: var(--color-secondary);
+            background: var(--clr-secondary); 
+            box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);
         }
 
         .btn-outline {
             background: transparent;
-            border: 2px solid var(--color-primary);
-            color: var(--color-primary);
+            border: 2px solid var(--clr-primary); 
+            color: var(--clr-primary); 
         }
 
         .btn-outline:hover {
-            background: var(--color-primary);
+            background: var(--clr-primary); 
             color: #fff;
+            box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3); 
         }
 
-        /* 📱 Responsive layout */
         @media (max-width: 480px) {
             .container {
                 padding: 30px 20px;
@@ -111,7 +126,7 @@ if (isset($_SESSION['role'])) {
                 gap: 12px;
             }
 
-            .btn {
+            .btn, .btn-outline {
                 width: 100%;
             }
         }
@@ -119,6 +134,8 @@ if (isset($_SESSION['role'])) {
 </head>
 <body>
     <div class="container">
+        <img src="../utils/images/cnhslogo.png" alt="CNHS Logo" class="logo-img">
+        
         <h1>Welcome!</h1>
         <p>Access your account or create a new one to get started.</p>
 

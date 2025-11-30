@@ -49,15 +49,15 @@ $admin = $result->fetch_assoc();
     <a href="#" class="nav-link" data-page="../auth/approve_user.php">
       <span class="icon">✅</span><span class="label">Approve Accounts</span>
     </a>
-    <a href="#" class="nav-link" data-page="manage_adviser_sections.php">
+    <!-- <a href="#" class="nav-link" data-page="manage_adviser_sections.php">
       <span class="icon">📋</span><span class="label">Manage Sections</span>
-    </a>
+    </a> -->
     <a href="#" class="nav-link" data-page="audit_logs.php">
       <span class="icon">📜</span><span class="label">View Audit Logs</span>
     </a>
-    <a href="#" class="nav-link" data-page="reports.php">
+    <!-- <a href="#" class="nav-link" data-page="reports.php">
       <span class="icon">📊</span><span class="label">Generate Reports</span>
-    </a>
+    </a> -->
 
     <a href="../auth/logout.php" class="logout-link">Logout</a>
   </nav>

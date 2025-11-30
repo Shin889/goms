@@ -23,13 +23,14 @@ if (isset($_POST['update_status'])) {
     if ($stmt->execute()) {
         $_SESSION['msg'] = "✅ Appointment status updated successfully!";
     } else {
+        // Use $stmt->error for error reporting specific to the prepared statement
         $_SESSION['msg'] = "❌ Failed to update status: " . $stmt->error;
     }
 
+    // Always redirect after POST to prevent form resubmission (PRG Pattern)
     header("Location: appointments.php");
     exit();
 }
-
 
 
 // Handle new appointment creation (Counselor manually books one)
@@ -53,7 +54,7 @@ if (isset($_POST['create_appointment'])) {
         $appointment_code,
         $user_id,
         $student_id,
-        $user_id,
+        $user_id, // Counselor books for themselves
         $start_time,
         $end_time,
         $mode,
@@ -61,10 +62,16 @@ if (isset($_POST['create_appointment'])) {
     );
 
     if ($stmt->execute()) {
-        $msg = "Appointment created successfully!";
+        // Use session message for success
+        $_SESSION['msg'] = "✅ Appointment created successfully!";
     } else {
-        $msg = "Error creating appointment: " . $conn->error;
+        // Use session message for error
+        $_SESSION['msg'] = "❌ Error creating appointment: " . $stmt->error;
     }
+    
+    // Implement PRG pattern: redirect regardless of success/failure
+    header("Location: appointments.php");
+    exit();
 }
 
 // Fetch all appointments assigned to this counselor
@@ -82,8 +89,18 @@ $stmt->bind_param("i", $user_id);
 $stmt->execute();
 $appointments = $stmt->get_result();
 
-// Fetch student list for dropdown
-$students = $conn->query("SELECT id, first_name, last_name, grade_level, section FROM students ORDER BY last_name ASC");
+// Fetch student list for dropdown (re-fetch as it's outside the POST block)
+// Note: We need to re-run the student query here since the page might have redirected.
+// We must rewind the result set or fetch the data again if needed in the HTML section.
+// Since the original script fetches students before any POST/redirect, we are re-running it here for correctness after the POST blocks.
+$students_result = $conn->query("SELECT id, first_name, last_name, grade_level, section FROM students ORDER BY last_name ASC");
+$students = [];
+if ($students_result) {
+    while($stu = $students_result->fetch_assoc()) {
+        $students[] = $stu;
+    }
+}
+
 ?>
 
 <!DOCTYPE html>
@@ -434,8 +451,11 @@ $students = $conn->query("SELECT id, first_name, last_name, grade_level, section
         </button>
     </div>
 
-<?php if (isset($_SESSION['msg'])): ?>
-    <div class="alert alert-success"><?= $_SESSION['msg'] ?></div>
+<?php if (isset($_SESSION['msg'])): 
+    // Determine alert type based on message content for better visual feedback
+    $alert_class = strpos($_SESSION['msg'], '❌') !== false || strpos($_SESSION['msg'], 'Failed') !== false ? 'alert-error' : 'alert-success';
+?>
+    <div class="alert <?= $alert_class ?>"><?= $_SESSION['msg'] ?></div>
     <?php unset($_SESSION['msg']); ?>
 <?php endif; ?>
 
@@ -520,7 +540,7 @@ $students = $conn->query("SELECT id, first_name, last_name, grade_level, section
                 <label>Student</label>
                 <select name="student_id" required>
                     <option value="">-- Select Student --</option>
-                    <?php while ($stu = $students->fetch_assoc()) { ?>
+                    <?php foreach ($students as $stu) { ?>
                         <option value="<?= $stu['id'] ?>">
                             <?= htmlspecialchars($stu['last_name'] . ', ' . $stu['first_name'] . ' (' . $stu['grade_level'] . ' - ' . $stu['section'] . ')') ?>
                         </option>
