@@ -21,9 +21,9 @@ switch ($_SESSION['role']) {
     case 'student':
         header("Location: student/dashboard.php");
         break;
-    case 'guardian':
+    /* case 'guardian':
         header("Location: guardian/dashboard.php");
-        break;
+        break; */
     default:
         session_destroy();
         header("Location: auth/index.php");
