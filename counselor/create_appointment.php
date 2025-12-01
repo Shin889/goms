@@ -70,7 +70,8 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
 <head>
     <meta charset="UTF-8">
     <title>Book Appointment - GOMS</title>
-    <link rel="stylesheet" href="../utils/css/root.css"> <!-- Global root vars -->
+    <link rel="stylesheet" href="../utils/css/root.css"> 
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css"><!-- Global root vars -->
     <style>
         body {
             margin: 0;
@@ -122,8 +123,29 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             padding: 30px;
         }
 
+        .form-body {
+            display: flex;
+            flex-direction: column;
+            gap: 20px; /* Space between rows */
+        }
+
+        /* NEW: Grid for two-column layout */
+        .form-row {
+            display: grid;
+            grid-template-columns: 1fr; /* Default to single column */
+            gap: 20px;
+        }
+
+        @media (min-width: 550px) {
+            .form-row.two-col {
+                grid-template-columns: 1fr 1fr; /* Two columns for scheduling details */
+            }
+        }
+
         .form-group {
-            margin-bottom: 20px;
+            margin-bottom: 0; /* Remove old margin, use .form-body gap instead */
+            display: flex;
+            flex-direction: column;
         }
 
         label {
@@ -156,7 +178,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         textarea:focus {
             outline: none;
             border-color: var(--color-primary);
-            box-shadow: 0 0 0 3px rgba(0, 123, 255, 0.1);
+            box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-primary) 30%, var(--color-bg)); /* Adjusted focus ring */
         }
 
         textarea {
@@ -167,6 +189,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         select {
             cursor: pointer;
             appearance: none;
+            /* Placeholder SVG for dropdown arrow, using a dynamic color if available */
             background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23666' d='M6 9L1 4h10z'/%3E%3C/svg%3E");
             background-repeat: no-repeat;
             background-position: right 14px center;
@@ -223,43 +246,51 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
 </head>
 <body>
     <div class="page-container">
-        <a href="referrals.php" class="back-link">← Back to Referrals</a>
+        <a href="referrals.php" class="back-link"><i class="fas fa-arrow-left"></i> Back to Referrals</a>
         
         <h2 class="page-title">Book Appointment</h2>
         <p class="page-subtitle">Schedule a counseling session for the referred student.</p>
 
         <div class="card">
             <div class="student-info">
-                <div class="label">Student</div>
+                <div class="label">Referred Student</div>
                 <div class="value"><?= htmlspecialchars($ref['first_name'].' '.$ref['last_name']); ?></div>
             </div>
 
             <form method="POST" action="">
-                <div class="form-group">
-                    <label>Start Time</label>
-                    <input type="datetime-local" name="start_time" required>
+                <div class="form-body">
+                    
+                    <div class="form-row two-col">
+                        <div class="form-group">
+                            <label>Start Time</label>
+                            <input type="datetime-local" name="start_time" required>
+                        </div>
+        
+                        <div class="form-group">
+                            <label>End Time</label>
+                            <input type="datetime-local" name="end_time" required>
+                        </div>
+                    </div>
+                    
+                    <div class="form-row"> 
+                        <div class="form-group">
+                            <label>Mode</label>
+                            <select name="mode" required>
+                                <option value="in-person">In-person</option>
+                                <option value="online">Online</option>
+                                <option value="phone">Phone</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="form-group">
+                        <label>Notes</label>
+                        <textarea name="notes" placeholder="Add any additional notes or instructions, purpose of session, or location details..."></textarea>
+                    </div>
+
                 </div>
 
-                <div class="form-group">
-                    <label>End Time</label>
-                    <input type="datetime-local" name="end_time" required>
-                </div>
-
-                <div class="form-group">
-                    <label>Mode</label>
-                    <select name="mode" required>
-                        <option value="in-person">In-person</option>
-                        <option value="online">Online</option>
-                        <option value="phone">Phone</option>
-                    </select>
-                </div>
-
-                <div class="form-group">
-                    <label>Notes</label>
-                    <textarea name="notes" placeholder="Add any additional notes or instructions..."></textarea>
-                </div>
-
-                <button type="submit" class="btn-submit">Confirm Appointment</button>
+                <button type="submit" class="btn-submit"><i class="fas fa-calendar-alt"></i> Confirm Appointment</button>
             </form>
         </div>
     </div>

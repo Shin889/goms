@@ -90,9 +90,6 @@ $stmt->execute();
 $appointments = $stmt->get_result();
 
 // Fetch student list for dropdown (re-fetch as it's outside the POST block)
-// Note: We need to re-run the student query here since the page might have redirected.
-// We must rewind the result set or fetch the data again if needed in the HTML section.
-// Since the original script fetches students before any POST/redirect, we are re-running it here for correctness after the POST blocks.
 $students_result = $conn->query("SELECT id, first_name, last_name, grade_level, section FROM students ORDER BY last_name ASC");
 $students = [];
 if ($students_result) {
@@ -107,187 +104,244 @@ if ($students_result) {
 <html lang="en">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Counselor Appointments - GOMS</title>
     <link rel="stylesheet" href="../utils/css/root.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    
     <style>
-        body {
-            margin: 0;
-            font-family: var(--font-family);
-            background: var(--color-bg);
-            color: var(--color-text);
+        /* This style block should be placed AFTER root.css (if it exists) to use/override variables */
+
+        /* General Layout */
+        .content-wrap {
+            display: flex;
             min-height: 100vh;
-            padding: 40px;
-            box-sizing: border-box;
         }
 
+        .content-area {
+            flex-grow: 1;
+            padding: 20px;
+            box-sizing: border-box;
+            margin-left: var(--layout-sidebar-width); /* Default spacing for non-collapsed sidebar */
+            transition: margin-left var(--time-transition);
+        }
+        
+        /* Mobile/Collapsed Adjustments */
+        @media (max-width: 900px) {
+            .content-area {
+                margin-left: var(--layout-sidebar-collapsed-width);
+            }
+        }
+        
         .page-container {
             max-width: 1400px;
             margin: 0 auto;
         }
 
+        /* Page Header */
         .page-header {
             display: flex;
+            flex-direction: column;
+            gap: 15px;
             justify-content: space-between;
-            align-items: center;
-            margin-bottom: 24px;
+            align-items: flex-start;
+            margin-bottom: 30px;
+        }
+        
+        @media (min-width: 768px) {
+            .page-header {
+                flex-direction: row;
+                align-items: center;
+            }
         }
 
         h1.page-title {
-            font-size: 1.8rem;
-            color: var(--color-primary);
+            font-size: var(--fs-heading); /* Using CSS Variable */
+            color: var(--clr-primary); /* Using CSS Variable */
             font-weight: 700;
             margin: 0;
         }
 
         p.page-subtitle {
-            color: var(--color-muted);
-            font-size: 0.95rem;
+            color: var(--clr-muted); /* Using CSS Variable */
+            font-size: var(--fs-small);
             margin: 4px 0 0 0;
         }
 
-        .btn-create {
-            padding: 12px 20px;
-            background: var(--color-primary);
-            color: #fff;
-            border: none;
-            border-radius: 8px;
-            font-size: 0.95rem;
-            font-weight: 600;
-            cursor: pointer;
-            transition: all 0.2s ease;
-        }
-
-        .btn-create:hover {
-            background: var(--color-primary-dark, #0056b3);
-            transform: translateY(-2px);
-            box-shadow: 0 4px 12px rgba(0, 123, 255, 0.3);
-        }
-
+        /* Alert Styling using Status Variables */
         .alert {
             padding: 14px 18px;
-            border-radius: 8px;
+            border-radius: var(--radius-sm); /* Using CSS Variable */
             margin-bottom: 20px;
             font-size: 0.95rem;
+            display: flex;
+            align-items: center;
+            font-weight: 500;
+            border: 1px solid;
         }
 
         .alert-success {
-            background: #d4edda;
-            color: #155724;
-            border: 1px solid #c3e6cb;
+            background: color-mix(in srgb, var(--clr-success) 10%, var(--clr-bg));
+            color: var(--clr-success);
+            border-color: var(--clr-success);
         }
 
         .alert-error {
-            background: #f8d7da;
-            color: #721c24;
-            border: 1px solid #f5c6cb;
+            background: color-mix(in srgb, var(--clr-error) 10%, var(--clr-bg));
+            color: var(--clr-error);
+            border-color: var(--clr-error);
         }
-
+        
+        /* Card component is already defined in root.css, just need .card class */
         .card {
-            background: var(--color-surface);
-            border: 1px solid var(--color-border);
-            border-radius: 14px;
-            box-shadow: var(--shadow-sm);
-            overflow: hidden;
+            padding: 1px; /* To prevent padding issue with table inside */
         }
 
+        /* Table Styling */
         .table-wrapper {
             overflow-x: auto;
+            width: 100%;
         }
 
         table {
             width: 100%;
             border-collapse: collapse;
-            font-size: 0.9rem;
+            font-size: var(--fs-base);
+            min-width: 1100px; 
         }
 
         th, td {
-            padding: 14px 16px;
+            padding: 16px 18px; /* Slightly more padding */
             text-align: left;
-            border-bottom: 1px solid var(--color-border);
+            border-bottom: 1px solid var(--clr-border); /* Using CSS Variable */
+            vertical-align: middle;
         }
 
         th {
-            background: rgba(255, 255, 255, 0.05);
-            color: var(--color-secondary);
+            background: var(--clr-surface); /* Header background */
+            color: var(--clr-muted); /* Using CSS Variable */
             font-weight: 600;
             text-transform: uppercase;
-            font-size: 0.8rem;
-            letter-spacing: 0.5px;
+            font-size: 0.75rem; /* Smaller header font */
+            letter-spacing: 0.8px;
             white-space: nowrap;
         }
 
-        tr:hover {
-            background: rgba(255, 255, 255, 0.03);
-        }
-
-        tr:last-child td {
-            border-bottom: none;
-        }
-
+        /* Badge Styling using Status Variables */
         .badge {
-            padding: 4px 10px;
-            border-radius: 12px;
-            font-size: 0.8rem;
-            font-weight: 600;
+            padding: 5px 12px;
+            border-radius: 16px; 
+            font-size: 0.75rem;
+            font-weight: 700;
             display: inline-block;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
         }
 
-        .badge-confirmed { background: #e3f2fd; color: #1976d2; }
-        .badge-completed { background: #e8f5e9; color: #388e3c; }
-        .badge-cancelled { background: #ffebee; color: #d32f2f; }
-        .badge-pending { background: #fff3e0; color: #f57c00; }
+        .badge-confirmed { 
+            background: color-mix(in srgb, var(--clr-info) 15%, var(--clr-bg)); 
+            color: var(--clr-info); 
+        }
+        .badge-completed { 
+            background: color-mix(in srgb, var(--clr-success) 15%, var(--clr-bg)); 
+            color: var(--clr-success); 
+        }
+        .badge-cancelled { 
+            background: color-mix(in srgb, var(--clr-error) 15%, var(--clr-bg)); 
+            color: var(--clr-error); 
+        }
+        .badge-pending { 
+            background: color-mix(in srgb, var(--clr-warning) 15%, var(--clr-bg)); 
+            color: var(--clr-warning); 
+        }
+        .badge-rescheduled { 
+            /* Using a muted color for a calmer rescheduling indicator */
+            background: color-mix(in srgb, var(--clr-muted) 15%, var(--clr-bg)); 
+            color: var(--clr-muted); 
+        } 
 
         .mode-badge {
-            background: rgba(0, 123, 255, 0.1);
-            color: var(--color-primary);
-            padding: 3px 8px;
-            border-radius: 8px;
+            background: var(--clr-accent); /* Using Accent for subtle highlight */
+            color: var(--clr-secondary);
+            padding: 4px 10px;
+            border-radius: var(--radius-sm);
             font-size: 0.8rem;
-            font-weight: 500;
-        }
-
-        .btn {
-            padding: 6px 12px;
-            border: none;
-            border-radius: 6px;
-            font-size: 0.85rem;
             font-weight: 600;
-            cursor: pointer;
-            transition: all 0.2s ease;
-            margin: 2px;
+            text-transform: capitalize;
         }
 
+        /* Action Buttons - using base .btn classes */
+        .action-buttons {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            min-width: 120px;
+        }
+        
+        @media (min-width: 1024px) {
+            .action-buttons {
+                flex-direction: row;
+            }
+        }
+        
         .btn-complete {
-            background: #28a745;
-            color: white;
+            background: var(--clr-success);
+            color: #fff;
+            padding: 8px 14px;
+            font-size: 0.85rem;
+            border-radius: var(--radius-sm);
         }
 
         .btn-complete:hover {
-            background: #218838;
-            transform: translateY(-1px);
+            background: var(--clr-secondary); /* Darker green on hover */
         }
-
+        
         .btn-cancel {
-            background: #dc3545;
-            color: white;
+            background: var(--clr-error);
+            color: #fff;
+            padding: 8px 14px;
+            font-size: 0.85rem;
+            border-radius: var(--radius-sm);
         }
 
         .btn-cancel:hover {
-            background: #c82333;
-            transform: translateY(-1px);
+            background: color-mix(in srgb, var(--clr-error) 80%, black); /* Slightly darker red on hover */
         }
+        /* New Form Layout Styles */
+.form-body {
+    display: flex;
+    flex-direction: column;
+    gap: 15px; /* Spacing between sections */
+}
 
-        .action-buttons {
-            display: flex;
-            gap: 4px;
-            flex-wrap: wrap;
-        }
+.form-row {
+    display: grid;
+    grid-template-columns: 1fr; /* Default to single column for small screens */
+    gap: 20px;
+}
 
-        form.inline {
-            display: inline;
-        }
+@media (min-width: 480px) {
+    .form-row.two-col {
+        grid-template-columns: 1fr 1fr; /* Two columns for medium/large screens */
+    }
+}
 
-        /* Modal Styles */
+.form-group {
+    display: flex;
+    flex-direction: column;
+    gap: 8px; /* Spacing between label and input */
+}
+
+/* Ensure inputs/selects/textareas fill their space */
+input[type="datetime-local"],
+select,
+textarea {
+    /* ... existing input styles ... */
+    width: 100%;
+    padding: 10px;
+    box-sizing: border-box; /* Important for width: 100% */
+}
+        /* Modal, Form, and Input Styling using Variables */
         .modal {
             display: none;
             position: fixed;
@@ -295,286 +349,261 @@ if ($students_result) {
             left: 0;
             right: 0;
             bottom: 0;
-            background: rgba(0, 0, 0, 0.6);
+            background: rgba(45, 55, 72, 0.8); /* Using text color for modal overlay */
             z-index: 1000;
             padding: 20px;
             overflow-y: auto;
+            align-items: center;
+            justify-content: center;
         }
-
+.modal-header {
+    border-bottom: 1px solid var(--clr-border);
+    padding-bottom: 15px;
+    margin-bottom: 20px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
         .modal-content {
-            background: var(--color-surface);
+            background: var(--clr-surface);
             max-width: 600px;
-            margin: 60px auto;
+            width: 95%;
+            margin: auto;
             padding: 30px;
-            border-radius: 14px;
-            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
-        }
-
-        .modal-header {
-            margin-bottom: 24px;
-        }
-
-        .modal-header h2 {
-            font-size: 1.5rem;
-            color: var(--color-primary);
-            font-weight: 700;
-            margin: 0;
-        }
-
-        .form-group {
-            margin-bottom: 18px;
+            border-radius: var(--radius-lg); /* Larger radius for modal */
+            box-shadow: var(--shadow-lg); /* Larger shadow for modal */
         }
 
         label {
-            display: block;
-            color: var(--color-secondary);
-            font-weight: 600;
-            font-size: 0.9rem;
-            margin-bottom: 8px;
+            color: var(--clr-muted);
             text-transform: uppercase;
-            letter-spacing: 0.3px;
         }
 
         input[type="datetime-local"],
         select,
         textarea {
-            width: 100%;
-            padding: 12px 14px;
-            border: 1px solid var(--color-border);
-            border-radius: 8px;
-            background: var(--color-bg);
-            color: var(--color-text);
-            font-size: 0.95rem;
-            font-family: var(--font-family);
-            transition: border-color 0.2s ease, box-shadow 0.2s ease;
-            box-sizing: border-box;
+            background: var(--clr-bg);
+            border: 1px solid var(--clr-border);
+            border-radius: var(--radius-sm);
         }
 
         input:focus,
         select:focus,
         textarea:focus {
-            outline: none;
-            border-color: var(--color-primary);
-            box-shadow: 0 0 0 3px rgba(0, 123, 255, 0.1);
+            border-color: var(--clr-primary);
+            box-shadow: 0 0 0 3px color-mix(in srgb, var(--clr-primary) 30%, var(--clr-bg)); /* Use mix for focus ring */
         }
 
-        select {
-            cursor: pointer;
-            appearance: none;
-            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23666' d='M6 9L1 4h10z'/%3E%3C/svg%3E");
-            background-repeat: no-repeat;
-            background-position: right 14px center;
-            padding-right: 40px;
-        }
-
-        textarea {
-            resize: vertical;
-            min-height: 80px;
-        }
-
+        /* Modal Footer Buttons */
         .modal-footer {
             display: flex;
+            flex-direction: column; 
             gap: 10px;
             margin-top: 24px;
         }
 
-        .btn-primary {
+        
+        @media (min-width: 480px) {
+            .modal-footer {
+                flex-direction: row-reverse;
+            }
+        }
+        
+        .modal-footer .btn-primary {
             flex: 1;
             padding: 12px 20px;
-            background: var(--color-primary);
+            background: var(--clr-primary);
             color: #fff;
             border: none;
-            border-radius: 8px;
+            border-radius: var(--radius-md);
             font-size: 0.95rem;
-            font-weight: 600;
-            cursor: pointer;
-            transition: all 0.2s ease;
         }
 
-        .btn-primary:hover {
-            background: var(--color-primary-dark, #0056b3);
-            transform: translateY(-1px);
-        }
-
-        .btn-secondary {
+        .modal-footer .btn-secondary {
             flex: 1;
             padding: 12px 20px;
             background: transparent;
-            color: var(--color-text);
-            border: 1px solid var(--color-border);
-            border-radius: 8px;
+            color: var(--clr-text);
+            border: 2px solid var(--clr-border); /* Changed to 2px for outline-style look */
+            border-radius: var(--radius-md);
             font-size: 0.95rem;
-            font-weight: 600;
-            cursor: pointer;
-            transition: all 0.2s ease;
         }
 
-        .btn-secondary:hover {
-            background: rgba(255, 255, 255, 0.05);
-            border-color: var(--color-primary);
+        .modal-footer .btn-secondary:hover {
+            background: var(--clr-accent);
+            border-color: var(--clr-primary);
+            color: var(--clr-primary);
         }
 
+        /* Empty State */
         .empty-state {
-            text-align: center;
             padding: 60px 20px;
-            color: var(--color-muted);
         }
-
-        .empty-state-icon {
-            font-size: 3rem;
-            margin-bottom: 16px;
-            opacity: 0.5;
-        }
-
-        .student-info {
-            font-size: 0.95rem;
-            line-height: 1.6;
-        }
-
-        .notes-cell {
-            max-width: 200px;
-            overflow: hidden;
-            text-overflow: ellipsis;
-            white-space: nowrap;
-        }
+        
     </style>
 </head>
 <body>
-<div class="page-container">
-    <div class="page-header">
-        <div>
-            <h1 class="page-title">Appointments</h1>
-            <p class="page-subtitle">Manage and track counseling appointments</p>
-        </div>
-        <button onclick="document.getElementById('createModal').style.display='block'" class="btn-create">
-            + New Appointment
-        </button>
+
+<div class="content-wrap">
+    <div class="sidebar">
+        <h2 class="logo">GOMS</h2>
+        <p class="sidebar-user">Counselor Dashboard</p>
+        
+        <a href="dashboard.php"><span class="icon"><i class="fas fa-home"></i></span><span class="label">Dashboard</span></a>
+        <a href="appointments.php" class="active"><span class="icon"><i class="fas fa-calendar-check"></i></span><span class="label">Appointments</span></a>
+        <a href="students.php"><span class="icon"><i class="fas fa-user-graduate"></i></span><span class="label">Students</span></a>
+        <a href="../logout.php" class="logout-link"><span class="icon"><i class="fas fa-sign-out-alt"></i></span><span class="label">Logout</span></a>
     </div>
 
-<?php if (isset($_SESSION['msg'])): 
-    // Determine alert type based on message content for better visual feedback
-    $alert_class = strpos($_SESSION['msg'], '❌') !== false || strpos($_SESSION['msg'], 'Failed') !== false ? 'alert-error' : 'alert-success';
-?>
-    <div class="alert <?= $alert_class ?>"><?= $_SESSION['msg'] ?></div>
-    <?php unset($_SESSION['msg']); ?>
-<?php endif; ?>
+    <div class="content-area">
+        <div class="page-container">
+            <div class="page-header">
+                <div>
+                    <h1 class="page-title">Appointments</h1>
+                    <p class="page-subtitle">Manage and track counseling appointments assigned to you.</p>
+                </div>
+                <button onclick="document.getElementById('createModal').style.display='flex'" class="btn">
+                    <i class="fas fa-plus-circle"></i> New Appointment
+                </button>
+            </div>
 
-    <div class="card">
-        <div class="table-wrapper">
-            <table>
-                <thead>
-                    <tr>
-                        <th>Code</th>
-                        <th>Student</th>
-                        <th>Grade & Section</th>
-                        <th>Start Time</th>
-                        <th>End Time</th>
-                        <th>Mode</th>
-                        <th>Status</th>
-                        <th>Notes</th>
-                        <th>Actions</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    <?php if ($appointments->num_rows > 0): ?>
-                        <?php while ($row = $appointments->fetch_assoc()) { 
-                            $statusClass = 'badge-' . strtolower($row['status']);
-                        ?>
+        <?php if (isset($_SESSION['msg'])): 
+            $alert_class = strpos($_SESSION['msg'], '❌') !== false || strpos($_SESSION['msg'], 'Failed') !== false ? 'alert-error' : 'alert-success';
+        ?>
+            <div class="alert <?= $alert_class ?>"><?= $_SESSION['msg'] ?></div>
+            <?php unset($_SESSION['msg']); ?>
+        <?php endif; ?>
+
+            <div class="card">
+                <div class="table-wrapper">
+                    <table>
+                        <thead>
                             <tr>
-                                <td><strong><?= htmlspecialchars($row['appointment_code']) ?></strong></td>
-                                <td class="student-info">
-                                    <?= htmlspecialchars($row['first_name'] . ' ' . $row['last_name']) ?>
-                                </td>
-                                <td><?= htmlspecialchars($row['grade_level'] . ' - ' . $row['section']) ?></td>
-                                <td><?= date("M d, Y h:i A", strtotime($row['start_time'])) ?></td>
-                                <td><?= date("M d, Y h:i A", strtotime($row['end_time'])) ?></td>
-                                <td><span class="mode-badge"><?= ucfirst($row['mode']) ?></span></td>
-                                <td><span class="badge <?= $statusClass ?>"><?= ucfirst($row['status']) ?></span></td>
-                                <td class="notes-cell" title="<?= htmlspecialchars($row['notes']) ?>">
-                                    <?= htmlspecialchars($row['notes']) ?>
-                                </td>
-                                <td>
-                                    <?php if ($row['status'] !== 'completed' && $row['status'] !== 'cancelled') { ?>
-                                        <div class="action-buttons">
-                                            <form class="inline" method="POST">
-                                                <input type="hidden" name="appointment_id" value="<?= $row['id'] ?>">
-                                                <input type="hidden" name="status" value="completed">
-                                                <button type="submit" name="update_status" class="btn btn-complete">Complete</button>
-                                            </form>
-                                            <form class="inline" method="POST">
-                                                <input type="hidden" name="appointment_id" value="<?= $row['id'] ?>">
-                                                <input type="hidden" name="status" value="cancelled">
-                                                <button type="submit" name="update_status" class="btn btn-cancel">Cancel</button>
-                                            </form>
-                                        </div>
-                                    <?php } else { ?>
-                                        <span style="color: var(--color-muted); font-size: 0.85rem;">No actions</span>
-                                    <?php } ?>
-                                </td>
+                                <th>Code</th>
+                                <th>Student</th>
+                                <th>Time & Date</th> <th>Mode</th>
+                                <th>Status</th>
+                                <th>Notes</th>
+                                <th>Actions</th>
                             </tr>
-                        <?php } ?>
-                    <?php else: ?>
-                        <tr>
-                            <td colspan="9">
-                                <div class="empty-state">
-                                    <div class="empty-state-icon">📅</div>
-                                    <p>No appointments found. Create your first appointment to get started.</p>
-                                </div>
-                            </td>
-                        </tr>
-                    <?php endif; ?>
-                </tbody>
-            </table>
+                        </thead>
+                        <tbody>
+                            <?php if ($appointments->num_rows > 0): ?>
+                                <?php while ($row = $appointments->fetch_assoc()) { 
+                                    $statusClass = 'badge-' . strtolower($row['status']);
+                                ?>
+                                    <tr>
+                                        <td><strong><?= htmlspecialchars($row['appointment_code']) ?></strong></td>
+                                        <td>
+                                            <div class="student-info">
+                                                <strong><?= htmlspecialchars($row['first_name'] . ' ' . $row['last_name']) ?></strong>
+                                                <span class="student-details"><?= htmlspecialchars('' . $row['grade_level'] . ' - ' . $row['section']) ?></span>
+                                            </div>
+                                        </td>
+                                        <td class="time-cell">
+                                            <?= date("M d, Y", strtotime($row['start_time'])) ?><br>
+                                            <span style="color: var(--clr-secondary); font-weight: 600;"><?= date("h:i A", strtotime($row['start_time'])) ?></span> - 
+                                            <span style="color: var(--clr-secondary); font-weight: 600;"><?= date("h:i A", strtotime($row['end_time'])) ?></span>
+                                        </td>
+                                        <td><span class="mode-badge"><?= ucfirst($row['mode']) ?></span></td>
+                                        <td><span class="badge <?= $statusClass ?>"><?= ucfirst($row['status']) ?></span></td>
+                                        <td class="notes-cell" title="<?= htmlspecialchars($row['notes']) ?>">
+                                            <?= htmlspecialchars($row['notes']) ?>
+                                        </td>
+                                        <td>
+                                            <?php if ($row['status'] !== 'completed' && $row['status'] !== 'cancelled') { ?>
+                                                <div class="action-buttons">
+                                                    <form class="inline" method="POST">
+                                                        <input type="hidden" name="appointment_id" value="<?= $row['id'] ?>">
+                                                        <input type="hidden" name="status" value="completed">
+                                                        <button type="submit" name="update_status" class="btn btn-complete">Complete</button>
+                                                    </form>
+                                                    <form class="inline" method="POST">
+                                                        <input type="hidden" name="appointment_id" value="<?= $row['id'] ?>">
+                                                        <input type="hidden" name="status" value="cancelled">
+                                                        <button type="submit" name="update_status" class="btn btn-cancel">Cancel</button>
+                                                    </form>
+                                                </div>
+                                            <?php } else { ?>
+                                                <span style="color: var(--clr-muted); font-size: 0.85rem;">No actions</span>
+                                            <?php } ?>
+                                        </td>
+                                    </tr>
+                                <?php } ?>
+                            <?php else: ?>
+                                <tr>
+                                    <td colspan="7"> 
+                                        <div class="empty-state">
+                                            <div class="empty-state-icon">📅</div>
+                                            <p style="font-size: 1.1rem; color: var(--clr-muted);">No appointments found. Use the **New Appointment** button to create one.</p>
+                                        </div>
+                                    </td>
+                                </tr>
+                            <?php endif; ?>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
         </div>
-    </div>
-</div>
+    </div> </div> 
 
-<!-- Modal for creating new appointment -->
-<div id="createModal" class="modal">
+    <div id="createModal" class="modal">
     <div class="modal-content">
         <div class="modal-header">
-            <h2>Create New Appointment</h2>
+            <h2 style="color: var(--clr-primary); margin: 0; font-size: 1.5rem;"><i class="fas fa-calendar-plus"></i> Schedule New Appointment</h2>
+            <button type="button" class="btn-close" style="background: none; border: none; cursor: pointer; color: var(--clr-muted); font-size: 1.2rem;" onclick="document.getElementById('createModal').style.display='none'">
+                <i class="fas fa-times"></i>
+            </button>
         </div>
+        
         <form method="POST">
-            <div class="form-group">
-                <label>Student</label>
-                <select name="student_id" required>
-                    <option value="">-- Select Student --</option>
-                    <?php foreach ($students as $stu) { ?>
-                        <option value="<?= $stu['id'] ?>">
-                            <?= htmlspecialchars($stu['last_name'] . ', ' . $stu['first_name'] . ' (' . $stu['grade_level'] . ' - ' . $stu['section'] . ')') ?>
-                        </option>
-                    <?php } ?>
-                </select>
-            </div>
+            <div class="form-body">
+                
+                <div class="form-row two-col">
+                    <div class="form-group">
+                        <label for="student_id">Student</label>
+                        <select name="student_id" id="student_id" required>
+                            <option value="">-- Select Student --</option>
+                            <?php foreach ($students as $stu) { ?>
+                                <option value="<?= $stu['id'] ?>">
+                                    <?= htmlspecialchars($stu['last_name'] . ', ' . $stu['first_name'] . ' (' . $stu['grade_level'] . ' - ' . $stu['section'] . ')') ?>
+                                </option>
+                            <?php } ?>
+                        </select>
+                    </div>
 
-            <div class="form-group">
-                <label>Start Time</label>
-                <input type="datetime-local" name="start_time" required>
-            </div>
+                    <div class="form-group">
+                        <label for="mode">Mode</label>
+                        <select name="mode" id="mode" required>
+                            <option value="in-person">In-Person</option>
+                            <option value="online">Online</option>
+                            <option value="phone">Phone</option>
+                        </select>
+                    </div>
+                </div>
 
-            <div class="form-group">
-                <label>End Time</label>
-                <input type="datetime-local" name="end_time" required>
-            </div>
+                <div class="form-row two-col">
+                    <div class="form-group">
+                        <label for="start_time">Start Time</label>
+                        <input type="datetime-local" id="start_time" name="start_time" required>
+                    </div>
 
-            <div class="form-group">
-                <label>Mode</label>
-                <select name="mode" required>
-                    <option value="in-person">In-Person</option>
-                    <option value="online">Online</option>
-                    <option value="phone">Phone</option>
-                </select>
-            </div>
+                    <div class="form-group">
+                        <label for="end_time">End Time</label>
+                        <input type="datetime-local" id="end_time" name="end_time" required>
+                    </div>
+                </div>
 
-            <div class="form-group">
-                <label>Notes</label>
-                <textarea name="notes" placeholder="Add any additional notes or instructions..."></textarea>
+                <div class="form-group">
+                    <label for="notes">Notes/Purpose</label>
+                    <textarea name="notes" id="notes" rows="3" placeholder="Add any additional notes or purpose for the appointment..."></textarea>
+                </div>
+                
             </div>
 
             <div class="modal-footer">
-                <button type="submit" name="create_appointment" class="btn-primary">Create Appointment</button>
-                <button type="button" class="btn-secondary" onclick="document.getElementById('createModal').style.display='none'">Cancel</button>
+                <button type="submit" name="create_appointment" class="btn-primary"><i class="fas fa-save"></i> Create Appointment</button>
+                <button type="button" class="btn-secondary" onclick="document.getElementById('createModal').style.display='none'"><i class="fas fa-times-circle"></i> Cancel</button>
             </div>
         </form>
     </div>

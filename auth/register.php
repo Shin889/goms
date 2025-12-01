@@ -15,9 +15,9 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     $stmt->bind_param("ssssss", $username, $email, $hashed_password, $role, $full_name, $phone);
 
     if ($stmt->execute()) {
-        echo "<script>alert('Registration successful! Wait for admin approval.'); window.location='login.php';</script>";
+        $success_message = 'Registration successful! Wait for admin approval.';
     } else {
-        echo "Error: " . $stmt->error;
+        $error_message = "Error: " . $stmt->error;
     }
 
     $stmt->close();
@@ -27,128 +27,199 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <title>Register | GOMS</title>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="../utils/css/root.css"> <!-- 🌈 Global Theme -->
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Register | GOMS</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="../utils/css/root.css"> 
 
-  <style>
-    body {
-        margin: 0;
-        height: 100vh;
-        background: var(--color-bg);
-        color: var(--color-text);
-        display: flex;
-        justify-content: center;
-        align-items: center;
-    }
-
-    .register-container {
-        background: var(--color-surface);
-        box-shadow: var(--shadow-md);
-        border-radius: var(--radius-lg);
-        width: 100%;
-        max-width: 480px;
-        padding: 40px 30px;
-        text-align: center;
-    }
-
-    h2 {
-        color: var(--color-primary);
-        font-size: var(--font-size-heading);
-        margin-bottom: 25px;
-    }
-
-    form {
-        display: flex;
-        flex-direction: column;
-        gap: 16px;
-    }
-
-    input, select {
-        padding: 12px;
-        border: 1px solid var(--color-border);
-        border-radius: var(--radius-md);
-        font-size: 1rem;
-        outline: none;
-        transition: var(--transition);
-
-    }
-
-    input::placeholder {
-        color: var(--color-muted);
-    }
-
-    input:focus, select:focus {
-        border-color: var(--color-primary);
-        box-shadow: 0 0 0 2px var(--color-accent);
-    }
-/* 
-    select {
-        background-color: #fff;
-        color: var(--color-text);
-    } */
-
-    button {
-        background: var(--color-primary);
-        color: #fff;
-        padding: 12px 30px;
-        border: none;
-        border-radius: var(--radius-md);
-        font-weight: 500;
-        cursor: pointer;
-        transition: var(--transition);
-        align-self: center;
-        width: 100%; /* not full width */
-    }
-
-    button:hover {
-        background: var(--color-secondary);
-    }
-
-    .back-link {
-        margin-top: 18px;
-        display: inline-block;
-        color: var(--color-secondary);
-        
-        text-decoration: none;
-        font-size: var(--font-size-small);
-    }
-
-    .back-link:hover {
-        color: var(--color-primary);
-    }
-
-    @media (max-width: 480px) {
-        .register-container {
-            padding: 30px 20px;
+    <style>
+        body {
+            margin: 0;
+            height: 100vh;
+            background: var(--clr-bg); 
+            color: var(--clr-text); 
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px; 
+            font-family: var(--font-family);
         }
-    }
-  </style>
+
+        .register-container {
+            background: var(--clr-surface); 
+            box-shadow: var(--shadow-md);
+            border-radius: var(--radius-lg);
+            width: 100%;
+            max-width: 480px; 
+            padding: 40px 30px;
+            text-align: center;
+            border: 1px solid var(--clr-border);
+            transition: border-color var(--time-transition);
+        }
+        
+        .register-container:hover {
+            border-color: var(--clr-primary);
+        }
+
+        h2 {
+            color: var(--clr-primary); 
+            font-size: var(--fs-heading); 
+            margin-bottom: 25px;
+            font-weight: 700;
+        }
+
+        form {
+            display: flex;
+            flex-direction: column;
+            gap: 18px; 
+        }
+
+        input, select {
+            width: 100%; 
+            box-sizing: border-box; 
+            padding: 12px 14px;
+            border: 1px solid var(--clr-border); 
+            border-radius: var(--radius-md);
+            font-size: 1rem;
+            outline: none;
+            transition: all var(--time-transition); 
+            background-color: #fff;
+            color: var(--clr-text);
+            -webkit-appearance: none; 
+            -moz-appearance: none;
+            appearance: none;
+        }
+
+        input:focus, select:focus {
+            border-color: var(--clr-primary); 
+            box-shadow: 0 0 0 2px var(--clr-accent);
+        }
+
+        input::placeholder {
+            color: var(--clr-muted);
+        }
+
+        .select-wrapper {
+            position: relative;
+        }
+
+        .select-wrapper::after {
+            content: '▼';
+            position: absolute;
+            top: 50%;
+            right: 14px;
+            transform: translateY(-50%);
+            pointer-events: none; 
+            color: var(--clr-muted);
+            font-size: var(--fs-small);
+        }
+        
+        select:required:invalid {
+            color: var(--clr-muted); 
+        }
+        
+        select option {
+            color: var(--clr-text); 
+        }
+
+        .message {
+            padding: 10px;
+            border-radius: var(--radius-sm);
+            margin-bottom: 20px;
+            font-size: var(--fs-small);
+            text-align: left;
+        }
+
+        .success-message {
+            background-color: #d1fae5;
+            color: var(--clr-success); 
+            border: 1px solid var(--clr-success);
+        }
+
+        .error-message {
+            background-color: #fee2e2; 
+            color: var(--clr-error); 
+            border: 1px solid var(--clr-error);
+        }
+
+        button {
+            background: var(--clr-primary); 
+            color: #fff;
+            padding: 12px 30px;
+            border: none;
+            border-radius: var(--radius-md);
+            font-weight: 600;
+            cursor: pointer;
+            transition: all var(--time-transition); 
+            width: 100%; 
+            margin-top: 10px;
+        }
+
+        button:hover {
+            background: var(--clr-secondary); 
+            box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);
+        }
+
+        .back-link {
+            margin-top: 20px;
+            display: inline-block;
+            color: var(--clr-secondary); 
+            text-decoration: none;
+            font-size: var(--fs-small); 
+            transition: color var(--time-transition);
+        }
+
+        .back-link:hover {
+            color: var(--clr-primary); 
+        }
+
+        @media (max-width: 480px) {
+            .register-container {
+                padding: 30px 20px;
+            }
+        }
+    </style>
 </head>
 <body>
-  <div class="register-container">
-    <h2>Create an Account</h2>
+    <div class="register-container">
+        <img src="../utils/images/cnhslogo.png" alt="CNHS Logo" class="logo-img" style="max-width: 80px; height: auto; margin-bottom: 15px;">
 
-    <form method="POST" action="">
-        <input type="text" name="full_name" placeholder="Full Name" required>
-        <input type="text" name="username" placeholder="Username" required>
-        <input type="email" name="email" placeholder="Email (optional)">
-        <input type="text" name="phone" placeholder="Phone Number">
-        <input type="password" name="password" placeholder="Password" required>
+        <h2>Create an Account</h2>
         
-        <select name="role" required>
-            <option value="" disabled selected>Select Role</option>
-            <option value="student">Student</option>
-            <option value="guardian">Guardian</option>
-            <option value="adviser">Adviser</option>
-            <option value="counselor">Counselor</option>
-        </select>
+        <?php if (!empty($success_message)): ?>
+            <div class="message success-message">
+                <?php echo $success_message; ?>
+            </div>
+        <?php endif; ?>
 
-        <button type="submit">Register</button>
-    </form>
+        <?php if (!empty($error_message)): ?>
+            <div class="message error-message">
+                <?php echo $error_message; ?>
+            </div>
+        <?php endif; ?>
 
-    <a href="login.php" class="back-link">← Back to Login</a>
-  </div>
+
+        <form method="POST" action="">
+            <input type="text" name="full_name" placeholder="Full Name" required autocomplete="name">
+            <input type="text" name="username" placeholder="Username" required autocomplete="username">
+            <input type="email" name="email" placeholder="Email (optional)" autocomplete="email">
+            <input type="text" name="phone" placeholder="Phone Number" autocomplete="tel">
+            <input type="password" name="password" placeholder="Password" required autocomplete="new-password">
+            
+            <div class="select-wrapper">
+                <select name="role" required>
+                    <option value="" disabled selected>Select Role</option>
+                    <option value="guardian">Guardian</option>
+                    <option value="adviser">Adviser</option>
+                    <option value="counselor">Counselor</option>
+                </select>
+            </div>
+
+            <button type="submit">Register Account</button>
+        </form>
+
+        <a href="login.php" class="back-link">← Back to Login</a>
+    </div>
 </body>
 </html>
