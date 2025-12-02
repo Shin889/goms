@@ -43,6 +43,7 @@ body {
 
 .sidebar-user {
     margin-bottom: 25px;
+    margin-top: 0 !important;
     font-size: var(--fs-small);
     color: var(--clr-muted);
     padding: 10px 14px; 

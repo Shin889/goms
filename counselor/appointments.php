@@ -119,10 +119,10 @@ if ($students_result) {
         }
 
         .content-area {
-            flex-grow: 1;
+         /*    flex-grow: 1; */
             padding: 20px;
             box-sizing: border-box;
-            margin-left: var(--layout-sidebar-width); /* Default spacing for non-collapsed sidebar */
+           /*  margin-left: var(--layout-sidebar-width);  *//* Default spacing for non-collapsed sidebar */
             transition: margin-left var(--time-transition);
         }
         
@@ -445,15 +445,15 @@ textarea {
 <body>
 
 <div class="content-wrap">
-    <div class="sidebar">
+    <!-- <div class="sidebar">
         <h2 class="logo">GOMS</h2>
         <p class="sidebar-user">Counselor Dashboard</p>
         
         <a href="dashboard.php"><span class="icon"><i class="fas fa-home"></i></span><span class="label">Dashboard</span></a>
         <a href="appointments.php" class="active"><span class="icon"><i class="fas fa-calendar-check"></i></span><span class="label">Appointments</span></a>
-        <a href="students.php"><span class="icon"><i class="fas fa-user-graduate"></i></span><span class="label">Students</span></a>
+        <a href="sessions.php"><span class="icon"><i class="fas fa-user-graduate"></i></span><span class="label">Sessions</span></a>
         <a href="../logout.php" class="logout-link"><span class="icon"><i class="fas fa-sign-out-alt"></i></span><span class="label">Logout</span></a>
-    </div>
+    </div> -->
 
     <div class="content-area">
         <div class="page-container">

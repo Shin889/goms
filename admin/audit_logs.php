@@ -139,8 +139,8 @@ $result = $conn->query("
             <th>ID</th>
             <th>User</th>
             <th>Action Type</th>
-            <th>Target Table</th>
-            <th>Target ID</th>
+            <!-- <th>Target Table</th> -->
+           <!--  <th>Target ID</th> -->
             <th>Details</th>
             <th>Date/Time</th>
           </tr>
@@ -154,8 +154,8 @@ $result = $conn->query("
                 <td><?= $log['id']; ?></td>
                 <td><?= htmlspecialchars($log['username'] ?? 'System/Unknown'); ?></td>
                 <td><span class="badge-action <?= $action_class; ?>"><?= htmlspecialchars($log['action']); ?></span></td>
-                <td><?= htmlspecialchars($log['target_table'] ?? 'N/A'); ?></td>
-                <td><?= htmlspecialchars($log['target_id'] ?? 'N/A'); ?></td>
+               <!--  <td><?= htmlspecialchars($log['target_table'] ?? 'N/A'); ?></td> -->
+                <!-- <td><?= htmlspecialchars($log['target_id'] ?? 'N/A'); ?></td> -->
                 <td class="log-details"><?= htmlspecialchars($log['details'] ?? 'No details provided'); ?></td>
                 <td><span class="log-date"><?= date('Y-m-d H:i:s', strtotime($log['created_at'])); ?></span></td>
               </tr>

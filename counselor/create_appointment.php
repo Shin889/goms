@@ -6,9 +6,16 @@ include('../includes/functions.php');
 include_once('../includes/sms_helper.php');
 
 $counselor_id = $_SESSION['user_id'];
+
+// FIX: load logged-in user
+$counselor = $conn->query("
+    SELECT username FROM users WHERE id = $counselor_id
+")->fetch_assoc();
+
 $referral_id = $_GET['referral_id'] ?? null;
 
-if (!$referral_id) {
+// Redirect ONLY on this page
+if (!$referral_id && basename($_SERVER['PHP_SELF']) === "create_appointment.php") {
     header("Location: referrals.php");
     exit;
 }
@@ -69,9 +76,11 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Book Appointment - GOMS</title>
-    <link rel="stylesheet" href="../utils/css/root.css"> 
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css"><!-- Global root vars -->
+    <title>Counselor Dashboard - GOMS</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="../utils/css/root.css">
+    <link rel="stylesheet" href="../utils/css/dashboard.css">
     <style>
         body {
             margin: 0;
@@ -245,6 +254,30 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     </style>
 </head>
 <body>
+      <nav class="sidebar" id="sidebar">
+    <button id="sidebarToggle" class="toggle-btn">☰</button>
+
+    <h2 class="logo">GOMS Counselor</h2>
+    <div class="sidebar-user">
+      Counselor · <?= htmlspecialchars($counselor['username'] ?? ''); ?>
+    </div>
+
+    <a href="/counselor/referrals.php" class="nav-link" data-page="referrals.php">
+      <span class="icon">📋</span><span class="label">Referrals</span>
+    </a>
+    <a href="/counselor/appointments.php" class="nav-link" data-page="appointments.php">
+      <span class="icon">📅</span><span class="label">Appointments</span>
+    </a>
+    <a href="/counselor/sessions.php" class="nav-link" data-page="sessions.php">
+      <span class="icon">💬</span><span class="label">Sessions</span>
+    </a>
+    <!-- <a href="#" class="nav-link" data-page="reports.php">
+      <span class="icon">📊</span><span class="label">View Reports</span>
+    </a> -->
+
+    <a href="../auth/logout.php" class="logout-link">Logout</a>
+  </nav>
+
     <div class="page-container">
         <a href="referrals.php" class="back-link"><i class="fas fa-arrow-left"></i> Back to Referrals</a>
         
@@ -294,5 +327,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             </form>
         </div>
     </div>
+    <script src="../utils/js/sidebar.js"></script>
+  <script src="../utils/js/dashboard.js"></script>
 </body>
 </html>

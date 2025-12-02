@@ -44,13 +44,13 @@ $counselor = $result->fetch_assoc();
     </div>
 
     <a href="#" class="nav-link active" data-page="referrals.php">
-      <span class="icon">📋</span><span class="label">View Referrals</span>
+      <span class="icon">📋</span><span class="label">Referrals</span>
     </a>
     <a href="#" class="nav-link" data-page="appointments.php">
-      <span class="icon">📅</span><span class="label">Manage Appointments</span>
+      <span class="icon">📅</span><span class="label">Appointments</span>
     </a>
     <a href="#" class="nav-link" data-page="sessions.php">
-      <span class="icon">💬</span><span class="label">Conduct Sessions</span>
+      <span class="icon">💬</span><span class="label">Sessions</span>
     </a>
     <!-- <a href="#" class="nav-link" data-page="reports.php">
       <span class="icon">📊</span><span class="label">View Reports</span>
