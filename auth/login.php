@@ -1,5 +1,4 @@
 <?php
-// Session is started in db.php
 include('../config/db.php');
 
 $error_message = '';

@@ -1,16 +1,14 @@
 <?php
-// config/sms_config.php
 
-// iTexMo SMS API Configuration (replace with your actual credentials)
-define('ITEXMO_API_CODE', 'TR-KARYL474085_4NVX5'); // Example format, replace with your API Code
-define('ITEXMO_API_PASSWORD', 'm67r]s6fqy'); // Example format, replace with your API Password
+// iTexMo SMS API Configuration 
+define('ITEXMO_API_CODE', 'TR-KARYL474085_4NVX5'); 
+define('ITEXMO_API_PASSWORD', 'm67r]s6fqy'); // 
 define('ITEXMO_API_URL', 'https://www.itexmo.com/php_api/api.php');
 
-// Alternative SMS provider configurations (optional)
-define('SMS_ENABLED', true); // Set to false to disable SMS during development
-define('SMS_TEST_MODE', true); // Set to true to log SMS instead of sending in development
+// Alternative SMS provider configurations 
+define('SMS_ENABLED', true); 
+define('SMS_TEST_MODE', true); 
 
-// SMS Templates (matching the specification)
 define('SMS_BOOKING_TEMPLATE', 'GOMS: Appointment booked for [StudentName] with Counselor [CounselorName] on [Date] at [Time]. Case: [BriefConcern]. Reply STOP to opt out.');
 define('SMS_RESCHEDULE_TEMPLATE', 'GOMS: Appointment for [StudentName] rescheduled to [Date] at [Time].');
 define('SMS_CANCELLATION_TEMPLATE', 'GOMS: Appointment for [StudentName] on [Date] at [Time] has been cancelled.');

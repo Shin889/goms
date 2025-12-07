@@ -1,5 +1,4 @@
 <?php
-// includes/auth_check.php
 require_once __DIR__ . '/../config/db.php';
 
 // Start session if not already started

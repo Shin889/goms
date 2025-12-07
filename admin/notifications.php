@@ -1,5 +1,4 @@
 <?php
-// admin/notifications.php
 include('../includes/auth_check.php');
 checkRole(['admin']);
 include('../config/db.php');

@@ -1,5 +1,4 @@
 <?php
-// auth/register.php
 include('../config/db.php');
 
 $success_message = '';

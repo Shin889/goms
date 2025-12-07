@@ -1,5 +1,4 @@
 <?php
-// admin/audit_logs.php
 include('../includes/auth_check.php');
 checkRole(['admin']); 
 include('../config/db.php');
@@ -243,7 +242,6 @@ $users = $users_result->fetch_all(MYSQLI_ASSOC);
         max-width: 400px;
         overflow: hidden;
         text-overflow: ellipsis;
-        white-space: pre-wrap;
         word-break: break-word;
         font-size: var(--fs-small);
         color: var(--clr-text);

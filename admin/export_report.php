@@ -1,5 +1,4 @@
 <?php
-// admin/export_report.php
 include('../includes/auth_check.php');
 checkRole(['admin']);
 include('../config/db.php');

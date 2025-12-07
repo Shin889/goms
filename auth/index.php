@@ -1,6 +1,4 @@
 <?php
-// Session will be started when db.php is included
-// But this file doesn't include db.php, so we need to check
 if (session_status() === PHP_SESSION_NONE) {
     session_start();
 }

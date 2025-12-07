@@ -1,5 +1,4 @@
 <?php
-// Session is started in db.php
 include('../config/db.php');
 include('../includes/auth_check.php');
 
@@ -96,9 +95,10 @@ if (isset($_SESSION['status_message'])) {
     unset($_SESSION['status_type']);
 }
 
-// Get pending users (not approved and not active)
+// Get pending users (not approved and not active) - FIXED: Add is_approved and is_active to SELECT
 $result = $conn->query("
-    SELECT id, username, role, full_name, email, phone, created_at 
+    SELECT id, username, role, full_name, email, phone, created_at, 
+           is_approved, is_active 
     FROM users 
     WHERE is_approved = 0 OR is_active = 0
     ORDER BY created_at DESC
@@ -331,13 +331,25 @@ $result = $conn->query("
         <tbody>
           <?php if ($result->num_rows > 0): ?>
             <?php while($row = $result->fetch_assoc()): 
-                $status_class = ($row['is_approved'] == 0) ? 'status-pending' : 'status-inactive';
-                $status_text = ($row['is_approved'] == 0) ? 'Pending' : 'Inactive';
+                // Check both conditions for status
+                $status_class = '';
+                $status_text = '';
+                
+                if ($row['is_approved'] == 0) {
+                    $status_class = 'status-pending';
+                    $status_text = 'Pending';
+                } elseif ($row['is_active'] == 0) {
+                    $status_class = 'status-inactive';
+                    $status_text = 'Inactive';
+                } else {
+                    $status_class = 'status-inactive';
+                    $status_text = 'Inactive';
+                }
             ?>
               <tr>
                 <td><?= htmlspecialchars($row['username']); ?></td>
                 <td>
-                    <span class="badge <?= $row['role']; ?>">
+                    <span class="badge <?= htmlspecialchars($row['role']); ?>">
                         <?= ucfirst($row['role']); ?>
                     </span>
                 </td>

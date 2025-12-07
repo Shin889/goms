@@ -1,5 +1,4 @@
 <?php
-// includes/functions.php
 require_once __DIR__ . '/../config/db.php';
 
 function getUserIP() {

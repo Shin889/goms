@@ -1,5 +1,4 @@
 <?php
-// admin/dashboard.php
 include('../includes/auth_check.php');
 // Use checkRole function instead of require_role
 checkRole(['admin']);

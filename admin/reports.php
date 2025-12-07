@@ -1,5 +1,4 @@
 <?php
-// admin/reports.php
 include('../includes/auth_check.php');
 checkRole(['admin']);
 include('../config/db.php');
@@ -123,18 +122,22 @@ while ($row = $result->fetch_assoc()) {
     $summary['by_category'][] = $row;
 }
 
-// 3. COUNSELOR ACTIVITY
+// 3. COUNSELOR ACTIVITY - FIXED
 $stmt = $conn->prepare("
     SELECT 
-        co.name as counselor_name,
+        u.full_name as counselor_name,
         COUNT(DISTINCT s.id) as sessions_count,
         COUNT(DISTINCT r.id) as reports_count
     FROM counselors co
+    JOIN users u ON co.user_id = u.id
     LEFT JOIN sessions s ON co.id = s.counselor_id AND DATE(s.start_time) BETWEEN ? AND ?
     LEFT JOIN reports r ON s.id = r.session_id
-    GROUP BY co.id, co.name
+    GROUP BY co.id, u.full_name
     ORDER BY sessions_count DESC
 ");
+if (!$stmt) {
+    die("Prepare failed: (" . $conn->errno . ") " . $conn->error);
+}
 $stmt->bind_param("ss", $start_date, $end_date);
 $stmt->execute();
 $result = $stmt->get_result();

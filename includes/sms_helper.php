@@ -1,5 +1,4 @@
 <?php
-// includes/sms_helper.php
 require_once __DIR__.'/../config/sms_config.php';
 require_once __DIR__.'/../config/db.php';
 

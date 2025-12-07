@@ -1,5 +1,4 @@
 <?php
-// config/db.php
 if (session_status() === PHP_SESSION_NONE) {
     session_start();
 }
@@ -9,7 +8,6 @@ $user = "root";
 $pass = "";         
 $dbname = "goms_db";
 
-// Create mysqli connection
 $conn = new mysqli($host, $user, $pass, $dbname);
 
 if ($conn->connect_error) {

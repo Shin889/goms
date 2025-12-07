@@ -1,5 +1,4 @@
 <?php
-// admin/manage_users.php
 include('../includes/auth_check.php');
 checkRole(['admin']); 
 include('../config/db.php');

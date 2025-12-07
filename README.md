@@ -11,10 +11,15 @@ guidance
 │  ├─ reports.php
 │  └─ update_section.php
 ├─ adviser
+│  ├─ appointments.php
 │  ├─ complaints.php
+│  ├─ create_complaint.php
 │  ├─ create_referral.php
 │  ├─ dashboard.php
-│  └─ referrals.php
+│  ├─ edit_complaint.php
+│  ├─ referrals.php
+│  ├─ students.php
+│  └─ view_complaint.php
 ├─ auth
 │  ├─ approve_user.php
 │  ├─ index.php
@@ -37,7 +42,8 @@ guidance
 │  ├─ appointments.php
 │  ├─ dashboard.php
 │  ├─ link_student.php
-│  └─ request_appointment.php
+│  ├─ request_appointment.php
+│  └─ submit_concern.php
 ├─ includes
 │  ├─ auth_check.php
 │  ├─ functions.php
@@ -164,6 +170,7 @@ guidance
 │        ├─ tuto6.php
 │        ├─ tuto7.htm
 │        └─ tuto7.php
+├─ README.md
 ├─ schema.sql
 ├─ student
 │  ├─ appointments.php
