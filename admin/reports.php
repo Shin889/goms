@@ -1,207 +1,826 @@
 <?php
+// admin/reports.php
 include('../includes/auth_check.php');
 checkRole(['admin']);
 include('../config/db.php');
 
-$start_date = $_GET['start_date'] ?? '';
-$end_date = $_GET['end_date'] ?? '';
+// Get filter parameters
+$report_type = $_GET['type'] ?? 'summary';
+$period = $_GET['period'] ?? 'monthly';
+$start_date = $_GET['start_date'] ?? date('Y-m-01');
+$end_date = $_GET['end_date'] ?? date('Y-m-t');
+$year = $_GET['year'] ?? date('Y');
+$format = $_GET['format'] ?? '';
 
-$where = '';
-if ($start_date && $end_date) {
-  $where = "WHERE DATE(created_at) BETWEEN '$start_date' AND '$end_date'";
+// Handle export request
+if ($format && in_array($format, ['pdf', 'csv', 'excel'])) {
+    header("Location: export_report.php?type=$report_type&format=$format&period=$period&start_date=$start_date&end_date=$end_date&year=$year");
+    exit;
 }
 
-// Fetch summary counts
-$complaints = $conn->query("SELECT COUNT(*) AS total FROM complaints $where")->fetch_assoc()['total'];
-$appointments = $conn->query("SELECT COUNT(*) AS total FROM appointments $where")->fetch_assoc()['total'];
-$sessions = $conn->query("SELECT COUNT(*) AS total FROM sessions $where")->fetch_assoc()['total'];
-$reports = $conn->query("SELECT COUNT(*) AS total FROM reports $where")->fetch_assoc()['total'];
+// Validate dates
+if (!empty($start_date) && !empty($end_date)) {
+    $start_date = date('Y-m-d', strtotime($start_date));
+    $end_date = date('Y-m-d', strtotime($end_date));
+} else {
+    // Default to current month
+    $start_date = date('Y-m-01');
+    $end_date = date('Y-m-t');
+}
+
+// Fetch summary statistics
+$summary = [];
+
+// 1. CASE STATISTICS
+$stmt = $conn->prepare("
+    SELECT 
+        COUNT(DISTINCT CASE WHEN DATE(created_at) BETWEEN ? AND ? THEN id END) as new_cases,
+        COUNT(DISTINCT CASE WHEN status != 'closed' THEN id END) as ongoing_cases,
+        COUNT(DISTINCT CASE WHEN status = 'closed' AND DATE(updated_at) BETWEEN ? AND ? THEN id END) as resolved_cases
+    FROM complaints
+");
+$stmt->bind_param("ssss", $start_date, $end_date, $start_date, $end_date);
+$stmt->execute();
+$result = $stmt->get_result();
+$summary['cases'] = $result->fetch_assoc();
+
+// Total referrals
+$stmt = $conn->prepare("
+    SELECT COUNT(*) as total
+    FROM referrals 
+    WHERE DATE(created_at) BETWEEN ? AND ?
+");
+$stmt->bind_param("ss", $start_date, $end_date);
+$stmt->execute();
+$result = $stmt->get_result();
+$summary['referrals'] = $result->fetch_assoc()['total'];
+
+// Appointments scheduled
+$stmt = $conn->prepare("
+    SELECT COUNT(*) as total
+    FROM appointments 
+    WHERE DATE(created_at) BETWEEN ? AND ?
+    AND status != 'cancelled'
+");
+$stmt->bind_param("ss", $start_date, $end_date);
+$stmt->execute();
+$result = $stmt->get_result();
+$summary['appointments'] = $result->fetch_assoc()['total'];
+
+// Sessions conducted
+$stmt = $conn->prepare("
+    SELECT COUNT(*) as total
+    FROM sessions 
+    WHERE DATE(start_time) BETWEEN ? AND ?
+    AND status = 'completed'
+");
+$stmt->bind_param("ss", $start_date, $end_date);
+$stmt->execute();
+$result = $stmt->get_result();
+$summary['sessions'] = $result->fetch_assoc()['total'];
+
+// Reports submitted
+$stmt = $conn->prepare("
+    SELECT COUNT(*) as total
+    FROM reports 
+    WHERE DATE(submission_date) BETWEEN ? AND ?
+");
+$stmt->bind_param("ss", $start_date, $end_date);
+$stmt->execute();
+$result = $stmt->get_result();
+$summary['reports'] = $result->fetch_assoc()['total'];
+
+// 2. CASELOAD DISTRIBUTION
+$stmt = $conn->prepare("
+    SELECT s.grade_level, COUNT(c.id) as count
+    FROM complaints c
+    JOIN students s ON c.student_id = s.id
+    WHERE DATE(c.created_at) BETWEEN ? AND ?
+    GROUP BY s.grade_level
+    ORDER BY s.grade_level
+");
+$stmt->bind_param("ss", $start_date, $end_date);
+$stmt->execute();
+$result = $stmt->get_result();
+$summary['by_grade'] = [];
+while ($row = $result->fetch_assoc()) {
+    $summary['by_grade'][] = $row;
+}
+
+// By concern category
+$stmt = $conn->prepare("
+    SELECT category, COUNT(*) as count
+    FROM complaints
+    WHERE DATE(created_at) BETWEEN ? AND ?
+    GROUP BY category
+    ORDER BY count DESC
+");
+$stmt->bind_param("ss", $start_date, $end_date);
+$stmt->execute();
+$result = $stmt->get_result();
+$summary['by_category'] = [];
+while ($row = $result->fetch_assoc()) {
+    $summary['by_category'][] = $row;
+}
+
+// 3. COUNSELOR ACTIVITY
+$stmt = $conn->prepare("
+    SELECT 
+        co.name as counselor_name,
+        COUNT(DISTINCT s.id) as sessions_count,
+        COUNT(DISTINCT r.id) as reports_count
+    FROM counselors co
+    LEFT JOIN sessions s ON co.id = s.counselor_id AND DATE(s.start_time) BETWEEN ? AND ?
+    LEFT JOIN reports r ON s.id = r.session_id
+    GROUP BY co.id, co.name
+    ORDER BY sessions_count DESC
+");
+$stmt->bind_param("ss", $start_date, $end_date);
+$stmt->execute();
+$result = $stmt->get_result();
+$summary['counselor_activity'] = [];
+while ($row = $result->fetch_assoc()) {
+    $summary['counselor_activity'][] = $row;
+}
+
+// Calculate totals
+$summary['total_new_cases'] = $summary['cases']['new_cases'] ?? 0;
+$summary['total_ongoing'] = $summary['cases']['ongoing_cases'] ?? 0;
+$summary['total_resolved'] = $summary['cases']['resolved_cases'] ?? 0;
 ?>
 <!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
   <title>Reports & Exports - GOMS</title>
-  <link rel="stylesheet" href="../utils/css/root.css"> <!-- Apply global variables -->
+  <link rel="stylesheet" href="../utils/css/root.css">
+  <link rel="stylesheet" href="../utils/css/dashboard_layout.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
   <style>
-    body {
-      margin: 0;
-      font-family: var(--font-family);
-      background: var(--color-bg);
-      color: var(--color-text);
-      padding: 40px;
-      min-height: 100vh;
-      box-sizing: border-box;
-    }
-
     .page-container {
-      max-width: 1000px;
+      max-width: 1400px;
       margin: 0 auto;
+      padding: 20px;
     }
 
     h2.page-title {
-      font-size: 1.6rem;
-      color: var(--color-primary);
+      font-size: var(--fs-heading);
+      color: var(--clr-primary);
       font-weight: 700;
       margin-bottom: 4px;
     }
 
     p.page-subtitle {
-      color: var(--color-muted);
-      font-size: 0.95rem;
-      margin-bottom: 20px;
+      color: var(--clr-muted);
+      font-size: var(--fs-small);
+      margin-bottom: 25px;
     }
 
-    .card {
-      background: var(--color-surface);
-      border: 1px solid var(--color-border);
-      border-radius: 14px;
-      box-shadow: var(--shadow-sm);
-      padding: 20px;
-      margin-top: 20px;
-      overflow-x: auto;
-    }
-
-    a.back-link {
-      display: inline-block;
-      margin-bottom: 14px;
-      color: var(--color-secondary);
-      text-decoration: none;
-      font-weight: 600;
-      transition: color 0.2s ease;
-    }
-
-    a.back-link:hover {
-      color: var(--color-primary);
-    }
-
-    form.filter-form {
+    /* Report Type Selection */
+    .report-type-tabs {
       display: flex;
-      flex-wrap: wrap;
       gap: 10px;
+      margin-bottom: 25px;
+      flex-wrap: wrap;
+      border-bottom: 1px solid var(--clr-border);
+      padding-bottom: 15px;
+    }
+    
+    .report-tab {
+      padding: 10px 20px;
+      background: var(--clr-surface);
+      border: 1px solid var(--clr-border);
+      border-radius: var(--radius-md);
+      text-decoration: none;
+      color: var(--clr-text);
+      font-weight: 500;
+      transition: all var(--time-transition);
+      display: flex;
       align-items: center;
+      gap: 8px;
+    }
+    
+    .report-tab:hover {
+      background: var(--clr-bg-light);
+      border-color: var(--clr-primary);
+    }
+    
+    .report-tab.active {
+      background: var(--clr-primary);
+      color: white;
+      border-color: var(--clr-primary);
+    }
+
+    /* Filter Section */
+    .filter-card {
+      background: var(--clr-surface);
+      border: 1px solid var(--clr-border);
+      border-radius: var(--radius-lg);
+      padding: 25px;
+      margin-bottom: 30px;
+      box-shadow: var(--shadow-sm);
+    }
+    
+    .filter-title {
+      font-size: var(--fs-subheading);
+      color: var(--clr-secondary);
+      margin-bottom: 20px;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    
+    .filter-form {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 20px;
       margin-bottom: 20px;
     }
-
-    form.filter-form label {
+    
+    .form-group {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    
+    .form-label {
+      font-size: var(--fs-small);
+      color: var(--clr-muted);
       font-weight: 500;
-      color: var(--color-text);
     }
-
-    form.filter-form input[type="date"] {
-      background: var(--color-surface);
-      border: 1px solid var(--color-border);
-      border-radius: 8px;
-      color: var(--color-text);
-      padding: 8px 10px;
-      font-size: 0.95rem;
-    }
-
-    form.filter-form button {
-      background: var(--color-primary);
-      color: #fff;
-      border: none;
-      border-radius: 8px;
-      padding: 8px 14px;
-      font-weight: 600;
+    
+    .form-select, .form-input {
+      padding: 10px 12px;
+      border: 1px solid var(--clr-border);
+      border-radius: var(--radius-md);
+      font-size: var(--fs-normal);
+      background: white;
+      color: var(--clr-text);
       cursor: pointer;
-      transition: background 0.2s ease;
+    }
+    
+    .form-select:focus, .form-input:focus {
+      outline: none;
+      border-color: var(--clr-primary);
+      box-shadow: 0 0 0 2px var(--clr-accent);
+    }
+    
+    .filter-buttons {
+      display: flex;
+      gap: 10px;
+      justify-content: flex-end;
+      margin-top: 10px;
+    }
+    
+    .btn-filter, .btn-export {
+      padding: 10px 20px;
+      border-radius: var(--radius-md);
+      font-weight: 500;
+      cursor: pointer;
+      border: none;
+      transition: all var(--time-transition);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    
+    .btn-filter {
+      background: var(--clr-primary);
+      color: white;
+    }
+    
+    .btn-filter:hover {
+      background: var(--clr-secondary);
+    }
+    
+    .btn-export {
+      background: var(--clr-success);
+      color: white;
+    }
+    
+    .btn-export:hover {
+      background: #059669;
     }
 
-    form.filter-form button:hover {
-      background: var(--color-secondary);
+    /* Summary Statistics */
+    .summary-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+      gap: 20px;
+      margin-bottom: 30px;
     }
-
-    table {
-      width: 100%;
-      border-collapse: collapse;
-      font-size: 0.95rem;
+    
+    .summary-card {
+      background: var(--clr-surface);
+      border: 1px solid var(--clr-border);
+      border-radius: var(--radius-lg);
+      padding: 25px;
+      box-shadow: var(--shadow-sm);
+      transition: all var(--time-transition);
+    }
+    
+    .summary-card:hover {
+      transform: translateY(-2px);
+      box-shadow: var(--shadow-md);
+    }
+    
+    .summary-card.cases {
+      border-left: 4px solid var(--clr-primary);
+    }
+    
+    .summary-card.activity {
+      border-left: 4px solid var(--clr-success);
+    }
+    
+    .summary-card.distribution {
+      border-left: 4px solid var(--clr-info);
+    }
+    
+    .summary-card.counselors {
+      border-left: 4px solid var(--clr-warning);
+    }
+    
+    .summary-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 15px;
+    }
+    
+    .summary-title {
+      font-size: var(--fs-small);
+      color: var(--clr-muted);
+      font-weight: 500;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    
+    .summary-icon {
+      font-size: 20px;
+      color: var(--clr-muted);
+    }
+    
+    .summary-value {
+      font-size: 2rem;
+      font-weight: 700;
+      color: var(--clr-primary);
+      margin: 5px 0;
+    }
+    
+    .summary-details {
+      font-size: var(--fs-xsmall);
+      color: var(--clr-muted);
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
       margin-top: 10px;
     }
 
-    th, td {
-      padding: 12px 14px;
-      border-bottom: 1px solid var(--color-border);
-      text-align: left;
+    /* Detailed Reports */
+    .detail-cards {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+      gap: 20px;
+      margin-bottom: 30px;
     }
-
-    th {
-      background: rgba(255, 255, 255, 0.05);
-      color: var(--color-secondary);
+    
+    .detail-card {
+      background: var(--clr-surface);
+      border: 1px solid var(--clr-border);
+      border-radius: var(--radius-lg);
+      padding: 25px;
+    }
+    
+    .detail-title {
+      font-size: var(--fs-normal);
+      color: var(--clr-secondary);
+      margin-bottom: 15px;
       font-weight: 600;
-      text-transform: uppercase;
-      font-size: 0.85rem;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    
+    .detail-list {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    
+    .detail-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 8px 0;
+      border-bottom: 1px solid var(--clr-border-light);
+    }
+    
+    .detail-item:last-child {
+      border-bottom: none;
+    }
+    
+    .item-label {
+      font-size: var(--fs-small);
+      color: var(--clr-text);
+    }
+    
+    .item-value {
+      font-size: var(--fs-normal);
+      font-weight: 600;
+      color: var(--clr-primary);
+    }
+    
+    .item-badge {
+      padding: 4px 10px;
+      border-radius: 12px;
+      font-size: var(--fs-xsmall);
+      font-weight: 600;
+      background: var(--clr-primary-light);
+      color: var(--clr-primary);
     }
 
-    tr:hover {
-      background: rgba(255, 255, 255, 0.03);
+    /* Export Options */
+    .export-options {
+      background: var(--clr-surface);
+      border: 1px solid var(--clr-border);
+      border-radius: var(--radius-lg);
+      padding: 25px;
+      margin-top: 30px;
     }
-
+    
+    .export-title {
+      font-size: var(--fs-subheading);
+      color: var(--clr-secondary);
+      margin-bottom: 20px;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    
     .export-buttons {
       display: flex;
-      gap: 10px;
-      margin-top: 20px;
+      gap: 15px;
+      flex-wrap: wrap;
     }
-
-    .export-buttons button {
-      background: var(--color-accent);
-      color: #fff;
-      border: none;
-      border-radius: 8px;
-      padding: 10px 16px;
-      font-weight: 600;
+    
+    .export-btn {
+      padding: 12px 24px;
+      border-radius: var(--radius-md);
+      font-weight: 500;
       cursor: pointer;
-      transition: background 0.2s ease;
+      border: none;
+      transition: all var(--time-transition);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      text-decoration: none;
     }
-
-    .export-buttons button:hover {
-      background: var(--color-primary);
+    
+    .export-btn.pdf {
+      background: #dc2626;
+      color: white;
     }
-
-    .empty {
+    
+    .export-btn.csv {
+      background: #059669;
+      color: white;
+    }
+    
+    .export-btn.excel {
+      background: #1d4ed8;
+      color: white;
+    }
+    
+    .export-btn:hover {
+      transform: translateY(-2px);
+      box-shadow: var(--shadow-md);
+    }
+    
+    .export-btn.pdf:hover {
+      background: #b91c1c;
+    }
+    
+    .export-btn.csv:hover {
+      background: #047857;
+    }
+    
+    .export-btn.excel:hover {
+      background: #1e40af;
+    }
+    
+    .empty-state {
       text-align: center;
-      color: var(--color-muted);
-      padding: 20px 0;
+      padding: 40px 20px;
+      color: var(--clr-muted);
+    }
+    
+    .empty-state i {
+      font-size: 3rem;
+      margin-bottom: 15px;
+      opacity: 0.5;
+    }
+    
+    @media (max-width: 768px) {
+      .page-container {
+        padding: 15px;
+      }
+      
+      .report-type-tabs {
+        flex-direction: column;
+      }
+      
+      .filter-form {
+        grid-template-columns: 1fr;
+      }
+      
+      .summary-grid {
+        grid-template-columns: 1fr;
+      }
+      
+      .detail-cards {
+        grid-template-columns: 1fr;
+      }
+      
+      .export-buttons {
+        flex-direction: column;
+      }
+      
+      .export-btn {
+        width: 100%;
+        justify-content: center;
+      }
     }
   </style>
 </head>
 <body>
   <div class="page-container">
     <h2 class="page-title">Reports & Exports</h2>
-    <p class="page-subtitle">Filter records by date and export summary reports for complaints, appointments, and sessions.</p>
-
-    <form method="GET" class="filter-form">
-      <label>From:</label>
-      <input type="date" name="start_date" value="<?= htmlspecialchars($start_date) ?>">
-      <label>To:</label>
-      <input type="date" name="end_date" value="<?= htmlspecialchars($end_date) ?>">
-      <button type="submit">Filter</button>
-    </form>
-
-    <div class="card">
-      <h3>Summary</h3>
-      <table>
-        <thead>
-          <tr>
-            <th>Category</th>
-            <th>Total</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr><td>Complaints Filed</td><td><?= $complaints ?></td></tr>
-          <tr><td>Appointments Booked</td><td><?= $appointments ?></td></tr>
-          <tr><td>Sessions Conducted</td><td><?= $sessions ?></td></tr>
-          <tr><td>Reports Filed</td><td><?= $reports ?></td></tr>
-        </tbody>
-      </table>
-
-      <form method="POST" action="export_report.php" class="export-buttons">
-        <input type="hidden" name="start_date" value="<?= htmlspecialchars($start_date) ?>">
-        <input type="hidden" name="end_date" value="<?= htmlspecialchars($end_date) ?>">
-        <button type="submit" name="export_type" value="csv">Export to CSV</button>
-        <button type="submit" name="export_type" value="pdf">Export to PDF</button>
+    <p class="page-subtitle">Generate comprehensive reports in Guidance Office format and export for DepEd submission.</p>
+    
+    <!-- Report Type Tabs -->
+    <div class="report-type-tabs">
+      <a href="?type=summary&period=<?= $period ?>&start_date=<?= $start_date ?>&end_date=<?= $end_date ?>" 
+         class="report-tab <?= ($report_type == 'summary') ? 'active' : ''; ?>">
+        <i class="fas fa-chart-bar"></i> Summary Report
+      </a>
+      <a href="?type=audit_logs&period=<?= $period ?>&start_date=<?= $start_date ?>&end_date=<?= $end_date ?>" 
+         class="report-tab <?= ($report_type == 'audit_logs') ? 'active' : ''; ?>">
+        <i class="fas fa-clipboard-list"></i> Audit Logs
+      </a>
+      <a href="?type=user_activity&period=<?= $period ?>&start_date=<?= $start_date ?>&end_date=<?= $end_date ?>" 
+         class="report-tab <?= ($report_type == 'user_activity') ? 'active' : ''; ?>">
+        <i class="fas fa-users"></i> User Activity
+      </a>
+    </div>
+    
+    <!-- Filter Section -->
+    <div class="filter-card">
+      <div class="filter-title">
+        <i class="fas fa-filter"></i> Report Filters
+      </div>
+      
+      <form method="GET" action="" class="filter-form">
+        <input type="hidden" name="type" value="<?= $report_type ?>">
+        
+        <div class="form-group">
+          <label class="form-label">Report Period</label>
+          <select name="period" class="form-select" onchange="this.form.submit()">
+            <option value="daily" <?= ($period == 'daily') ? 'selected' : ''; ?>>Daily</option>
+            <option value="weekly" <?= ($period == 'weekly') ? 'selected' : ''; ?>>Weekly</option>
+            <option value="monthly" <?= ($period == 'monthly') ? 'selected' : ''; ?>>Monthly</option>
+            <option value="quarterly" <?= ($period == 'quarterly') ? 'selected' : ''; ?>>Quarterly</option>
+            <option value="yearly" <?= ($period == 'yearly') ? 'selected' : ''; ?>>Yearly</option>
+            <option value="custom" <?= ($period == 'custom') ? 'selected' : ''; ?>>Custom Range</option>
+          </select>
+        </div>
+        
+        <div class="form-group">
+          <label class="form-label">Start Date</label>
+          <input type="date" name="start_date" class="form-input" 
+                 value="<?= htmlspecialchars($start_date); ?>"
+                 <?= ($period != 'custom') ? 'disabled' : ''; ?>>
+        </div>
+        
+        <div class="form-group">
+          <label class="form-label">End Date</label>
+          <input type="date" name="end_date" class="form-input" 
+                 value="<?= htmlspecialchars($end_date); ?>"
+                 <?= ($period != 'custom') ? 'disabled' : ''; ?>>
+        </div>
+        
+        <div class="form-group">
+          <label class="form-label">Year</label>
+          <select name="year" class="form-select" onchange="this.form.submit()">
+            <?php for ($y = date('Y'); $y >= 2020; $y--): ?>
+              <option value="<?= $y; ?>" <?= ($year == $y) ? 'selected' : ''; ?>>
+                <?= $y; ?>
+              </option>
+            <?php endfor; ?>
+          </select>
+        </div>
       </form>
+      
+      <div class="filter-buttons">
+        <button type="submit" class="btn-filter" onclick="document.forms[0].submit();">
+          <i class="fas fa-filter"></i> Apply Filters
+        </button>
+      </div>
+    </div>
+    
+    <?php if ($report_type == 'summary'): ?>
+      <!-- Summary Report -->
+      <div class="summary-grid">
+        <div class="summary-card cases">
+          <div class="summary-header">
+            <div class="summary-title">Case Statistics</div>
+            <div class="summary-icon"><i class="fas fa-folder-open"></i></div>
+          </div>
+          <div class="summary-value"><?= $summary['total_new_cases']; ?></div>
+          <div class="summary-details">
+            <div>New Cases: <?= $summary['total_new_cases']; ?></div>
+            <div>Ongoing: <?= $summary['total_ongoing']; ?></div>
+            <div>Resolved: <?= $summary['total_resolved']; ?></div>
+          </div>
+        </div>
+        
+        <div class="summary-card activity">
+          <div class="summary-header">
+            <div class="summary-title">Activity Summary</div>
+            <div class="summary-icon"><i class="fas fa-chart-line"></i></div>
+          </div>
+          <div class="summary-value"><?= $summary['appointments']; ?></div>
+          <div class="summary-details">
+            <div>Appointments: <?= $summary['appointments']; ?></div>
+            <div>Sessions: <?= $summary['sessions']; ?></div>
+            <div>Reports: <?= $summary['reports']; ?></div>
+          </div>
+        </div>
+        
+        <div class="summary-card distribution">
+          <div class="summary-header">
+            <div class="summary-title">Caseload Distribution</div>
+            <div class="summary-icon"><i class="fas fa-layer-group"></i></div>
+          </div>
+          <div class="summary-value"><?= count($summary['by_grade']); ?></div>
+          <div class="summary-details">
+            <div>Grade Levels: <?= count($summary['by_grade']); ?></div>
+            <div>Concern Categories: <?= count($summary['by_category']); ?></div>
+            <div>Referrals: <?= $summary['referrals']; ?></div>
+          </div>
+        </div>
+        
+        <div class="summary-card counselors">
+          <div class="summary-header">
+            <div class="summary-title">Counselor Activity</div>
+            <div class="summary-icon"><i class="fas fa-user-md"></i></div>
+          </div>
+          <div class="summary-value"><?= count($summary['counselor_activity']); ?></div>
+          <div class="summary-details">
+            <div>Active Counselors: <?= count($summary['counselor_activity']); ?></div>
+            <div>Total Sessions: <?= $summary['sessions']; ?></div>
+            <div>Total Reports: <?= $summary['reports']; ?></div>
+          </div>
+        </div>
+      </div>
+      
+      <!-- Detailed Reports -->
+      <div class="detail-cards">
+        <div class="detail-card">
+          <div class="detail-title">
+            <i class="fas fa-graduation-cap"></i> By Grade Level
+          </div>
+          <div class="detail-list">
+            <?php if (!empty($summary['by_grade'])): ?>
+              <?php foreach ($summary['by_grade'] as $grade): ?>
+                <div class="detail-item">
+                  <span class="item-label">Grade <?= htmlspecialchars($grade['grade_level']); ?></span>
+                  <span class="item-value"><?= $grade['count']; ?></span>
+                </div>
+              <?php endforeach; ?>
+            <?php else: ?>
+              <div class="empty-state">
+                <i class="fas fa-chart-pie"></i>
+                <p>No grade level data available</p>
+              </div>
+            <?php endif; ?>
+          </div>
+        </div>
+        
+        <div class="detail-card">
+          <div class="detail-title">
+            <i class="fas fa-tags"></i> By Concern Category
+          </div>
+          <div class="detail-list">
+            <?php if (!empty($summary['by_category'])): ?>
+              <?php foreach ($summary['by_category'] as $category): ?>
+                <div class="detail-item">
+                  <span class="item-label"><?= ucfirst(htmlspecialchars($category['category'])); ?></span>
+                  <span class="item-value"><?= $category['count']; ?></span>
+                </div>
+              <?php endforeach; ?>
+            <?php else: ?>
+              <div class="empty-state">
+                <i class="fas fa-tags"></i>
+                <p>No category data available</p>
+              </div>
+            <?php endif; ?>
+          </div>
+        </div>
+        
+        <div class="detail-card">
+          <div class="detail-title">
+            <i class="fas fa-user-md"></i> Counselor Performance
+          </div>
+          <div class="detail-list">
+            <?php if (!empty($summary['counselor_activity'])): ?>
+              <?php foreach ($summary['counselor_activity'] as $counselor): ?>
+                <div class="detail-item">
+                  <span class="item-label"><?= htmlspecialchars($counselor['counselor_name']); ?></span>
+                  <span class="item-badge"><?= $counselor['sessions_count']; ?> sessions</span>
+                </div>
+              <?php endforeach; ?>
+            <?php else: ?>
+              <div class="empty-state">
+                <i class="fas fa-user-md"></i>
+                <p>No counselor activity data</p>
+              </div>
+            <?php endif; ?>
+          </div>
+        </div>
+      </div>
+    <?php endif; ?>
+    
+    <!-- Export Options -->
+    <div class="export-options">
+      <div class="export-title">
+        <i class="fas fa-download"></i> Export Report
+      </div>
+      <div class="export-buttons">
+        <a href="?type=<?= $report_type ?>&format=pdf&period=<?= $period ?>&start_date=<?= $start_date ?>&end_date=<?= $end_date ?>&year=<?= $year ?>" 
+           class="export-btn pdf">
+          <i class="fas fa-file-pdf"></i> Export as PDF
+        </a>
+        <a href="?type=<?= $report_type ?>&format=csv&period=<?= $period ?>&start_date=<?= $start_date ?>&end_date=<?= $end_date ?>&year=<?= $year ?>" 
+           class="export-btn csv">
+          <i class="fas fa-file-csv"></i> Export as CSV
+        </a>
+        <a href="?type=<?= $report_type ?>&format=excel&period=<?= $period ?>&start_date=<?= $start_date ?>&end_date=<?= $end_date ?>&year=<?= $year ?>" 
+           class="export-btn excel">
+          <i class="fas fa-file-excel"></i> Export as Excel
+        </a>
+      </div>
     </div>
   </div>
+  
+  <script>
+    document.addEventListener('DOMContentLoaded', function() {
+      // Handle period selection
+      const periodSelect = document.querySelector('select[name="period"]');
+      const startDateInput = document.querySelector('input[name="start_date"]');
+      const endDateInput = document.querySelector('input[name="end_date"]');
+      
+      function updateDateInputs() {
+        const period = periodSelect.value;
+        const today = new Date();
+        
+        if (period !== 'custom') {
+          startDateInput.disabled = true;
+          endDateInput.disabled = true;
+          
+          // Set dates based on period
+          let startDate = new Date(today);
+          
+          switch (period) {
+            case 'daily':
+              startDate.setDate(today.getDate() - 1);
+              break;
+            case 'weekly':
+              startDate.setDate(today.getDate() - 7);
+              break;
+            case 'monthly':
+              startDate.setMonth(today.getMonth() - 1);
+              break;
+            case 'quarterly':
+              startDate.setMonth(today.getMonth() - 3);
+              break;
+            case 'yearly':
+              startDate.setFullYear(today.getFullYear() - 1);
+              break;
+          }
+          
+          startDateInput.value = startDate.toISOString().split('T')[0];
+          endDateInput.value = today.toISOString().split('T')[0];
+        } else {
+          startDateInput.disabled = false;
+          endDateInput.disabled = false;
+        }
+      }
+      
+      periodSelect.addEventListener('change', updateDateInputs);
+      updateDateInputs(); // Initialize
+    });
+  </script>
 </body>
 </html>

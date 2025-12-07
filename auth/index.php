@@ -1,5 +1,9 @@
 <?php
-session_start();
+// Session will be started when db.php is included
+// But this file doesn't include db.php, so we need to check
+if (session_status() === PHP_SESSION_NONE) {
+    session_start();
+}
 
 // Redirect logged-in users directly to their dashboard
 if (isset($_SESSION['role'])) {
@@ -12,9 +16,6 @@ if (isset($_SESSION['role'])) {
             exit;
         case 'adviser':
             header("Location: ../adviser/dashboard.php");
-            exit;
-        case 'student':
-            header("Location: ../student/dashboard.php");
             exit;
         case 'guardian':
             header("Location: ../guardian/dashboard.php");
@@ -41,6 +42,7 @@ if (isset($_SESSION['role'])) {
             display: flex;
             justify-content: center;
             align-items: center;
+            font-family: var(--font-family);
         }
 
         .container {
@@ -65,7 +67,6 @@ if (isset($_SESSION['role'])) {
             height: auto;
             margin-bottom: 15px;
         }
-
 
         h1 {
             margin-bottom: 10px;
@@ -115,6 +116,25 @@ if (isset($_SESSION['role'])) {
             color: #fff;
             box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3); 
         }
+        
+        /* Error message styling */
+        .error-message {
+            background-color: #fee2e2;
+            color: var(--clr-error);
+            border: 1px solid var(--clr-error);
+            padding: 10px;
+            border-radius: var(--radius-md);
+            margin-bottom: 20px;
+            font-size: var(--fs-small);
+            text-align: left;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .error-message i {
+            font-size: var(--fs-normal);
+        }
 
         @media (max-width: 480px) {
             .container {
@@ -136,12 +156,26 @@ if (isset($_SESSION['role'])) {
     <div class="container">
         <img src="../utils/images/cnhslogo.png" alt="CNHS Logo" class="logo-img">
         
-        <h1>Welcome!</h1>
-        <p>Access your account or create a new one to get started.</p>
+        <?php if (isset($_GET['error']) && $_GET['error'] == 'account_not_approved'): ?>
+            <div class="error-message">
+                <i class="fas fa-exclamation-circle"></i>
+                Your account is pending admin approval or has been deactivated. Please contact the administrator.
+            </div>
+        <?php endif; ?>
+        
+        <?php if (isset($_GET['error']) && $_GET['error'] == 'invalid_role'): ?>
+            <div class="error-message">
+                <i class="fas fa-exclamation-circle"></i>
+                Invalid user role detected. Please contact the administrator.
+            </div>
+        <?php endif; ?>
+        
+        <h1>Welcome to GOMS</h1>
+        <p>Guidance Office Management System<br>Access your account or create a new one to get started.</p>
 
         <div class="buttons">
-            <a href="login.php" class="btn">Login</a>
-            <a href="register.php" class="btn btn-outline">Register</a>
+            <a href="login.php" class="btn"><i class="fas fa-sign-in-alt"></i> Login</a>
+            <a href="register.php" class="btn btn-outline"><i class="fas fa-user-plus"></i> Register</a>
         </div>
     </div>
 </body>

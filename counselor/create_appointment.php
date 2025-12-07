@@ -85,8 +85,8 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         body {
             margin: 0;
             font-family: var(--font-family);
-            background: var(--color-bg);
-            color: var(--color-text);
+            background: var(--clr-bg);
+            color: var(--clr-text);
             min-height: 100vh;
             padding: 40px;
             box-sizing: border-box;
@@ -95,73 +95,89 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         .page-container {
             max-width: 800px;
             margin: 0 auto;
+            padding-left: calc(var(--layout-sidebar-width) + 20px);
+            transition: padding-left var(--time-transition);
+        }
+
+        @media (max-width: 900px) {
+            .page-container {
+                padding-left: calc(var(--layout-sidebar-collapsed-width) + 20px);
+            }
         }
 
         h2.page-title {
-            font-size: 1.6rem;
-            color: var(--color-primary);
+            font-size: var(--fs-heading);
+            color: var(--clr-primary);
             font-weight: 700;
             margin-bottom: 4px;
         }
 
         p.page-subtitle {
-            color: var(--color-muted);
-            font-size: 0.95rem;
-            margin-bottom: 20px;
+            color: var(--clr-muted);
+            font-size: var(--fs-small);
+            margin-bottom: 24px;
         }
 
         a.back-link {
-            display: inline-block;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
             margin-bottom: 20px;
-            color: var(--color-secondary);
+            color: var(--clr-secondary);
             text-decoration: none;
             font-weight: 600;
-            transition: color 0.2s ease;
-            font-size: 0.95rem;
+            transition: color var(--time-transition);
+            font-size: var(--fs-small);
+            padding: 8px 12px;
+            border-radius: var(--radius-sm);
         }
 
         a.back-link:hover {
-            color: var(--color-primary);
+            color: var(--clr-primary);
+            background: var(--clr-accent);
         }
 
         .card {
-            background: var(--color-surface);
-            border: 1px solid var(--color-border);
-            border-radius: 14px;
+            background: var(--clr-surface);
+            border: 1px solid var(--clr-border);
+            border-radius: var(--radius-md);
             box-shadow: var(--shadow-sm);
-            padding: 30px;
+            padding: 28px;
+            transition: box-shadow var(--time-transition);
+        }
+
+        .card:hover {
+            box-shadow: var(--shadow-md);
         }
 
         .form-body {
             display: flex;
             flex-direction: column;
-            gap: 20px; /* Space between rows */
+            gap: 24px;
         }
 
-        /* NEW: Grid for two-column layout */
         .form-row {
             display: grid;
-            grid-template-columns: 1fr; /* Default to single column */
+            grid-template-columns: 1fr;
             gap: 20px;
         }
 
         @media (min-width: 550px) {
             .form-row.two-col {
-                grid-template-columns: 1fr 1fr; /* Two columns for scheduling details */
+                grid-template-columns: 1fr 1fr;
             }
         }
 
         .form-group {
-            margin-bottom: 0; /* Remove old margin, use .form-body gap instead */
             display: flex;
             flex-direction: column;
         }
 
         label {
             display: block;
-            color: var(--color-secondary);
+            color: var(--clr-secondary);
             font-weight: 600;
-            font-size: 0.9rem;
+            font-size: var(--fs-small);
             margin-bottom: 8px;
             text-transform: uppercase;
             letter-spacing: 0.3px;
@@ -172,13 +188,13 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         textarea {
             width: 100%;
             padding: 12px 14px;
-            border: 1px solid var(--color-border);
-            border-radius: 8px;
-            background: var(--color-bg);
-            color: var(--color-text);
+            border: 1px solid var(--clr-border);
+            border-radius: var(--radius-sm);
+            background: var(--clr-bg);
+            color: var(--clr-text);
             font-size: 0.95rem;
             font-family: var(--font-family);
-            transition: border-color 0.2s ease, box-shadow 0.2s ease;
+            transition: all var(--time-transition);
             box-sizing: border-box;
         }
 
@@ -186,20 +202,20 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         select:focus,
         textarea:focus {
             outline: none;
-            border-color: var(--color-primary);
-            box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-primary) 30%, var(--color-bg)); /* Adjusted focus ring */
+            border-color: var(--clr-primary);
+            box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.1);
         }
 
         textarea {
             resize: vertical;
-            min-height: 100px;
+            min-height: 120px;
+            line-height: 1.5;
         }
 
         select {
             cursor: pointer;
             appearance: none;
-            /* Placeholder SVG for dropdown arrow, using a dynamic color if available */
-            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23666' d='M6 9L1 4h10z'/%3E%3C/svg%3E");
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23718096' d='M6 9L1 4h10z'/%3E%3C/svg%3E");
             background-repeat: no-repeat;
             background-position: right 14px center;
             padding-right: 40px;
@@ -208,21 +224,25 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         .btn-submit {
             width: 100%;
             padding: 14px 20px;
-            background: var(--color-primary);
+            background: var(--clr-primary);
             color: #fff;
             border: none;
-            border-radius: 8px;
+            border-radius: var(--radius-md);
             font-size: 1rem;
             font-weight: 600;
             cursor: pointer;
-            transition: all 0.2s ease;
-            margin-top: 10px;
+            transition: all var(--time-transition);
+            margin-top: 16px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
         }
 
         .btn-submit:hover {
-            background: var(--color-primary-dark, #0056b3);
+            background: var(--clr-secondary);
             transform: translateY(-2px);
-            box-shadow: 0 4px 12px rgba(0, 123, 255, 0.3);
+            box-shadow: var(--shadow-md);
         }
 
         .btn-submit:active {
@@ -230,16 +250,16 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         }
 
         .student-info {
-            background: rgba(0, 123, 255, 0.05);
-            border-left: 4px solid var(--color-primary);
-            padding: 14px 18px;
-            border-radius: 8px;
-            margin-bottom: 24px;
+            background: rgba(16, 185, 129, 0.05);
+            border-left: 4px solid var(--clr-primary);
+            padding: 16px 20px;
+            border-radius: var(--radius-sm);
+            margin-bottom: 28px;
         }
 
         .student-info .label {
-            font-size: 0.8rem;
-            color: var(--color-muted);
+            font-size: 0.75rem;
+            color: var(--clr-muted);
             text-transform: uppercase;
             font-weight: 600;
             letter-spacing: 0.5px;
@@ -248,38 +268,32 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
 
         .student-info .value {
             font-size: 1.1rem;
-            color: var(--color-primary);
+            color: var(--clr-primary);
             font-weight: 700;
         }
     </style>
 </head>
 <body>
-      <nav class="sidebar" id="sidebar">
-    <button id="sidebarToggle" class="toggle-btn">☰</button>
-
-    <h2 class="logo">GOMS Counselor</h2>
-    <div class="sidebar-user">
-      Counselor · <?= htmlspecialchars($counselor['username'] ?? ''); ?>
-    </div>
-
-    <a href="/counselor/referrals.php" class="nav-link" data-page="referrals.php">
-      <span class="icon">📋</span><span class="label">Referrals</span>
-    </a>
-    <a href="/counselor/appointments.php" class="nav-link" data-page="appointments.php">
-      <span class="icon">📅</span><span class="label">Appointments</span>
-    </a>
-    <a href="/counselor/sessions.php" class="nav-link" data-page="sessions.php">
-      <span class="icon">💬</span><span class="label">Sessions</span>
-    </a>
-    <!-- <a href="#" class="nav-link" data-page="reports.php">
-      <span class="icon">📊</span><span class="label">View Reports</span>
-    </a> -->
-
-    <a href="../auth/logout.php" class="logout-link">Logout</a>
-  </nav>
+    <nav class="sidebar" id="sidebar">
+        <button id="sidebarToggle" class="toggle-btn">☰</button>
+        <h2 class="logo">GOMS Counselor</h2>
+        <div class="sidebar-user">
+            Counselor · <?= htmlspecialchars($counselor['username'] ?? ''); ?>
+        </div>
+        <a href="/counselor/referrals.php" class="nav-link" data-page="referrals.php">
+            <span class="icon">📋</span><span class="label">Referrals</span>
+        </a>
+        <a href="/counselor/appointments.php" class="nav-link" data-page="appointments.php">
+            <span class="icon">📅</span><span class="label">Appointments</span>
+        </a>
+        <a href="/counselor/sessions.php" class="nav-link" data-page="sessions.php">
+            <span class="icon">💬</span><span class="label">Sessions</span>
+        </a>
+        <a href="../auth/logout.php" class="logout-link">Logout</a>
+    </nav>
 
     <div class="page-container">
-        <a href="referrals.php" class="back-link"><i class="fas fa-arrow-left"></i> Back to Referrals</a>
+        <a href="referrals.php" class="back-link">← Back to Referrals</a>
         
         <h2 class="page-title">Book Appointment</h2>
         <p class="page-subtitle">Schedule a counseling session for the referred student.</p>
@@ -292,7 +306,6 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
 
             <form method="POST" action="">
                 <div class="form-body">
-                    
                     <div class="form-row two-col">
                         <div class="form-group">
                             <label>Start Time</label>
@@ -305,7 +318,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                         </div>
                     </div>
                     
-                    <div class="form-row"> 
+                    <div class="form-row">
                         <div class="form-group">
                             <label>Mode</label>
                             <select name="mode" required>
@@ -320,14 +333,41 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                         <label>Notes</label>
                         <textarea name="notes" placeholder="Add any additional notes or instructions, purpose of session, or location details..."></textarea>
                     </div>
-
                 </div>
 
-                <button type="submit" class="btn-submit"><i class="fas fa-calendar-alt"></i> Confirm Appointment</button>
+                <button type="submit" class="btn-submit">✓ Confirm Appointment</button>
             </form>
         </div>
     </div>
+
     <script src="../utils/js/sidebar.js"></script>
-  <script src="../utils/js/dashboard.js"></script>
+    <script src="../utils/js/dashboard.js"></script>
+    <script>
+        // Handle sidebar collapse effect on content padding
+        document.addEventListener('DOMContentLoaded', function() {
+            const sidebar = document.getElementById('sidebar');
+            const pageContainer = document.querySelector('.page-container');
+            
+            function updateContentPadding() {
+                if (sidebar.classList.contains('collapsed')) {
+                    pageContainer.style.paddingLeft = 'calc(var(--layout-sidebar-collapsed-width) + 20px)';
+                } else {
+                    pageContainer.style.paddingLeft = 'calc(var(--layout-sidebar-width) + 20px)';
+                }
+            }
+            
+            // Initial check
+            updateContentPadding();
+            
+            // Listen for sidebar toggle
+            document.getElementById('sidebarToggle')?.addEventListener('click', function() {
+                // Wait for transition to complete
+                setTimeout(updateContentPadding, 300);
+            });
+            
+            // Responsive adjustments
+            window.addEventListener('resize', updateContentPadding);
+        });
+    </script>
 </body>
 </html>
