@@ -8,24 +8,24 @@ include_once('../includes/sms_helper.php');
 $counselor_id = $_SESSION['user_id'];
 $referral_id = isset($_GET['referral_id']) ? intval($_GET['referral_id']) : 0;
 
-// FIX: Proper validation and redirect
+// Validation
 if ($referral_id <= 0) {
     $_SESSION['error'] = "Invalid referral ID.";
     header("Location: referrals.php");
     exit;
 }
 
-// FIX: Load logged-in user with prepared statement
-$stmt = $conn->prepare("SELECT username FROM users WHERE id = ?");
+// Get counselor info
+$stmt = $conn->prepare("SELECT username, full_name FROM users WHERE id = ?");
 $stmt->bind_param("i", $counselor_id);
 $stmt->execute();
 $result = $stmt->get_result();
 $counselor = $result->fetch_assoc();
 $stmt->close();
 
-// FIX: Fetch student linked to referral with prepared statement
+// Get student info from referral
 $stmt = $conn->prepare("
-    SELECT c.student_id, s.first_name, s.last_name
+    SELECT c.student_id, s.first_name, s.last_name, s.student_id as student_number
     FROM referrals r
     JOIN complaints c ON r.complaint_id = c.id
     JOIN students s ON c.student_id = s.id
@@ -37,7 +37,6 @@ $ref_result = $stmt->get_result();
 $ref = $ref_result->fetch_assoc();
 $stmt->close();
 
-// FIX: Check if referral exists
 if (!$ref) {
     $_SESSION['error'] = "Referral not found.";
     header("Location: referrals.php");
@@ -46,55 +45,100 @@ if (!$ref) {
 
 $student_id = $ref['student_id'];
 
+// Handle form submission
 if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     $start = $_POST['start_time'];
     $end = $_POST['end_time'];
     $mode = $_POST['mode'];
-    $notes = $_POST['notes'];
-    $appointment_code = "APT-" . date("Y") . "-" . rand(1000,9999);
-
-    // FIX: Prepared statement for appointment creation
-    $stmt = $conn->prepare("
-        INSERT INTO appointments (
-            appointment_code, requested_by_user_id, student_id, 
-            counselor_id, start_time, end_time, mode, status, notes
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, 'confirmed', ?)
-    ");
+    $notes = $_POST['notes'] ?? '';
+    $appointment_code = "APT-" . date("Y") . "-" . rand(1000, 9999);
     
-    if ($stmt === false) {
-        die("Prepare failed: " . $conn->error);
+    // Set location and meeting link based on mode
+    $location = '';
+    $meeting_link = '';
+    
+    if ($mode === 'in-person') {
+        $location = 'Counseling Room A';
+    } elseif ($mode === 'online') {
+        $location = 'Online Meeting';
+        $meeting_link = 'https://meet.generic.edu/session-' . rand(10000, 99999);
+    } elseif ($mode === 'phone') {
+        $location = 'Phone Consultation';
     }
     
+    $status = 'scheduled'; // Default status
+    
+    // Debug: Check connection
+    if ($conn->connect_error) {
+        die("Database connection failed: " . $conn->connect_error);
+    }
+    
+    // EXACT INSERT statement matching your table structure
+    $sql = "INSERT INTO appointments (
+                appointment_code, 
+                student_id, 
+                counselor_id, 
+                referral_id,
+                start_time, 
+                end_time, 
+                mode,
+                status,
+                location,
+                meeting_link,
+                notes,
+                created_by
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+    
+    // Debug: Show the SQL
+    // echo "<pre>SQL: " . htmlspecialchars($sql) . "</pre>";
+    
+    $stmt = $conn->prepare($sql);
+    
+    if (!$stmt) {
+        // Show more detailed error
+        $error_msg = "Prepare failed: " . htmlspecialchars($conn->error);
+        error_log($error_msg);
+        die($error_msg . "<br>Check that all column names match your table structure.");
+    }
+    
+    // Debug: check all values
+    error_log("Appointment values: code=$appointment_code, student=$student_id, counselor=$counselor_id, referral=$referral_id, start=$start, end=$end, mode=$mode, status=$status, location=$location, meeting=$meeting_link, notes=$notes, created=$counselor_id");
+    
+    // Bind parameters - 12 parameters total
     $stmt->bind_param(
-        "siiissss", 
-        $appointment_code, 
-        $counselor_id, 
-        $student_id, 
-        $counselor_id, 
-        $start, 
-        $end, 
-        $mode, 
-        $notes
+        "siiisssssssi", // 12 characters for 12 parameters
+        $appointment_code,     // s
+        $student_id,           // i
+        $counselor_id,         // i
+        $referral_id,          // i
+        $start,                // s
+        $end,                  // s
+        $mode,                 // s
+        $status,               // s (status)
+        $location,             // s
+        $meeting_link,         // s
+        $notes,                // s
+        $counselor_id          // i (created_by)
     );
-
+    
     if ($stmt->execute()) {
         $appointment_id = $stmt->insert_id;
+        
+        // Log the action
         logAction($counselor_id, 'Create Appointment', 'appointments', $appointment_id, "From referral #$referral_id");
         
-        // FIX: Also update referral status if needed
-        $update_stmt = $conn->prepare("
-            UPDATE referrals SET status = 'scheduled' WHERE id = ?
-        ");
+        // Update referral status
+        $update_stmt = $conn->prepare("UPDATE referrals SET status = 'scheduled' WHERE id = ?");
         $update_stmt->bind_param("i", $referral_id);
         $update_stmt->execute();
         $update_stmt->close();
-
-        // ✅ Send SMS with prepared statement
+        
+        // Send SMS to guardian
         $guardian_stmt = $conn->prepare("
             SELECT g.phone 
             FROM student_guardians sg 
             JOIN guardians g ON sg.guardian_id = g.id 
-            WHERE sg.student_id = ?
+            WHERE sg.student_id = ? AND sg.primary_guardian = 1
             LIMIT 1
         ");
         $guardian_stmt->bind_param("i", $student_id);
@@ -102,19 +146,19 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         $guardian_result = $guardian_stmt->get_result();
         $guardian = $guardian_result->fetch_assoc();
         $guardian_stmt->close();
-
+        
         if ($guardian && !empty($guardian['phone'])) {
             $formatted_date = date("F j, Y \a\\t g:i A", strtotime($start));
-            $msg = "Your child has a counseling appointment set on $formatted_date. Please confirm or be available.";
+            $msg = "GOMS: Your child " . $ref['first_name'] . " has a counseling appointment scheduled on $formatted_date. Mode: $mode.";
             sendSMS($counselor_id, $guardian['phone'], $msg);
         }
-
-        // Use session message instead of JavaScript alert
+        
         $_SESSION['success'] = "Appointment created successfully!";
         header("Location: appointments.php");
         exit;
     } else {
         $error = "Error creating appointment: " . $stmt->error;
+        error_log("Execute error: " . $stmt->error);
     }
     
     $stmt->close();
@@ -130,6 +174,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="../utils/css/root.css">
     <link rel="stylesheet" href="../utils/css/dashboard.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
     <style>
         body {
             margin: 0;
@@ -195,15 +240,15 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         }
 
         .alert-error {
-            background: color-mix(in srgb, var(--clr-error) 10%, var(--clr-bg));
-            color: var(--clr-error);
-            border-color: var(--clr-error);
+            background: rgba(239, 68, 68, 0.1);
+            color: #ef4444;
+            border-color: #ef4444;
         }
 
         .alert-success {
-            background: color-mix(in srgb, var(--clr-success) 10%, var(--clr-bg));
-            color: var(--clr-success);
-            border-color: var(--clr-success);
+            background: rgba(34, 197, 94, 0.1);
+            color: #22c55e;
+            border-color: #22c55e;
         }
 
         .card {
@@ -320,9 +365,9 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
 
         .student-info {
             background: rgba(16, 185, 129, 0.05);
-            border-left: 4px solid var(--clr-primary);
-            padding: 16px 20px;
+            border: 1px solid rgba(16, 185, 129, 0.2);
             border-radius: var(--radius-sm);
+            padding: 16px 20px;
             margin-bottom: 28px;
         }
 
@@ -347,7 +392,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         <button id="sidebarToggle" class="toggle-btn">☰</button>
         <h2 class="logo">GOMS Counselor</h2>
         <div class="sidebar-user">
-            Counselor · <?= htmlspecialchars($counselor['username'] ?? ''); ?>
+            Counselor · <?= htmlspecialchars($counselor['full_name'] ?? $counselor['username']); ?>
         </div>
         <a href="dashboard.php" class="nav-link">
             <span class="icon"><i class="fas fa-home"></i></span><span class="label">Dashboard</span>
@@ -360,9 +405,6 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         </a>
         <a href="sessions.php" class="nav-link">
             <span class="icon"><i class="fas fa-comments"></i></span><span class="label">Sessions</span>
-        </a>
-        <a href="create_report.php" class="nav-link">
-            <span class="icon"><i class="fas fa-file-alt"></i></span><span class="label">Generate Report</span>
         </a>
         <a href="../auth/logout.php" class="logout-link">
             <i class="fas fa-sign-out-alt"></i> Logout
@@ -391,7 +433,10 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         <div class="card">
             <div class="student-info">
                 <div class="label">Referred Student</div>
-                <div class="value"><?= htmlspecialchars($ref['first_name'].' '.$ref['last_name']); ?></div>
+                <div class="value"><?= htmlspecialchars($ref['first_name'] . ' ' . $ref['last_name']); ?></div>
+                <div style="font-size: 0.9rem; color: var(--clr-muted); margin-top: 4px;">
+                    Student ID: <?= htmlspecialchars($ref['student_number'] ?? 'N/A'); ?>
+                </div>
             </div>
 
             <form method="POST" action="">

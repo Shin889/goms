@@ -67,12 +67,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $error = 'Referral reason must be at least 10 characters.';
     } else {
         // Create referral
-        $stmt = $conn->prepare("
-            INSERT INTO referrals 
-            (complaint_id, adviser_id, referral_reason, priority, counselor_id, notes, status, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, 'open', NOW(), NOW())
-        ");
-        $stmt->bind_param("iisssis", $complaint_id, $adviser_info['id'], $referral_reason, $priority, $recommended_counselor_id, $notes);
+       $stmt = $conn->prepare("
+    INSERT INTO referrals 
+    (complaint_id, adviser_id, referral_reason, priority, counselor_id, notes, status, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, 'open', NOW(), NOW())
+");
+$stmt->bind_param("iisssi", $complaint_id, $adviser_info['id'], $referral_reason, $priority, $recommended_counselor_id, $notes);
         
         if ($stmt->execute()) {
             $referral_id = $conn->insert_id;

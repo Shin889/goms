@@ -68,7 +68,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             // Insert session with prepared statement
             $stmt = $conn->prepare("
                 INSERT INTO sessions (
-                    counselor_id, student_id, start_time, end_time, location, 
+                    $appointment_id ?: 0, counselor_id, student_id, start_time, end_time, location, 
                     notes_draft, status, session_type, issues_discussed, 
                     interventions_used, follow_up_plan
                 ) VALUES (?, ?, ?, ?, ?, ?, 'in_progress', ?, ?, ?, ?)
