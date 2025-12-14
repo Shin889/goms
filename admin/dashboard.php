@@ -318,9 +318,9 @@ $recent_logs = $stmt->get_result();
     <a href="#" class="nav-link" data-page="../auth/approve_user.php">
       <span class="icon"><i class="fas fa-user-check"></i></span><span class="label">Approve Accounts</span>
     </a>
-    <a href="#" class="nav-link" data-page="manage_adviser_sections.php">
+   <!--  <a href="#" class="nav-link" data-page="manage_adviser_sections.php">
       <span class="icon"><i class="fas fa-chalkboard-teacher"></i></span><span class="label">Manage Sections</span>
-    </a>
+    </a> -->
     <a href="#" class="nav-link" data-page="audit_logs.php">
       <span class="icon"><i class="fas fa-clipboard-list"></i></span><span class="label">View Audit Logs</span>
     </a>

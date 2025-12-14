@@ -1,6 +1,8 @@
 <?php
 include('../config/db.php');
 include('../includes/auth_check.php');
+// ADD THIS LINE: Include the functions file that contains logAction()
+include('../includes/functions.php'); // <-- ADD THIS LINE
 
 // Check if user is admin
 if ($_SESSION['role'] != 'admin') {
@@ -34,7 +36,7 @@ if (isset($_GET['approve'])) {
             $result2 = $stmt2->get_result();
             $user = $result2->fetch_assoc();
             
-            // Log the action
+            // Log the action - This should now work since we included functions.php
             logAction($admin_id, 'APPROVE', "Approved user registration: {$user['username']} ({$user['role']})", 'users', $user_id);
             
             $_SESSION['status_message'] = "User approved successfully!";
@@ -111,197 +113,9 @@ $result = $conn->query("
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Approve Users</title>
   <link rel="stylesheet" href="../utils/css/root.css">
+  <link rel="stylesheet" href="../utils/css/approve_user.css">
   <link rel="stylesheet" href="../utils/css/dashboard_layout.css"> 
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
-
-  <style>
-    .page-container {
-      max-width: 1200px;
-      margin: 0 auto;
-      padding: 20px;
-    }
-
-    h2.page-title {
-      font-size: var(--fs-heading); 
-      color: var(--clr-primary);
-      font-weight: 700;
-      margin-bottom: 4px;
-    }
-
-    p.page-subtitle {
-      color: var(--clr-muted);
-      font-size: var(--fs-small);
-      margin-bottom: 25px;
-    }
-
-    .card {
-      background: var(--clr-surface); 
-      border: 1px solid var(--clr-border); 
-      border-radius: var(--radius-lg);
-      box-shadow: var(--shadow-sm);
-      padding: 20px;
-      overflow-x: auto;
-    }
-
-    table {
-      width: 100%;
-      border-collapse: collapse;
-      font-size: var(--fs-normal);
-    }
-
-    th, td {
-      padding: 15px 14px;
-      border-bottom: 1px solid var(--clr-border-light);
-      text-align: left;
-      white-space: nowrap;
-    }
-
-    th {
-      background: var(--clr-bg-light); 
-      color: var(--clr-secondary); 
-      font-weight: 600;
-      text-transform: uppercase;
-      font-size: var(--fs-xsmall);
-    }
-
-    tr:hover {
-      background: var(--clr-hover); 
-    }
-    
-    .status-message {
-        padding: 12px 20px;
-        margin-bottom: 25px;
-        border-radius: var(--radius-md);
-        font-weight: 500;
-        display: flex;
-        align-items: center;
-        gap: 10px;
-    }
-    .status-message.success {
-        background-color: var(--clr-success-light);
-        color: var(--clr-success);
-        border: 1px solid var(--clr-success);
-    }
-    .status-message.error {
-        background-color: var(--clr-error-light);
-        color: var(--clr-error);
-        border: 1px solid var(--clr-error);
-    }
-    .status-message.warning, .status-message.info {
-        background-color: var(--clr-warning-light);
-        color: var(--clr-warning);
-        border: 1px solid var(--clr-warning);
-    }
-
-    /* Action Buttons */
-    .btn-approve {
-      background: var(--clr-primary); 
-      color: #fff;
-      padding: 8px 14px;
-      border-radius: var(--radius-sm);
-      font-weight: 600;
-      text-decoration: none;
-      transition: all var(--time-transition);
-      display: inline-block;
-      margin-right: 5px;
-      border: none;
-      cursor: pointer;
-    }
-
-    .btn-approve:hover {
-      background: var(--clr-secondary); 
-    }
-    
-    .btn-disapprove {
-        background: var(--clr-error); 
-        color: #fff;
-        padding: 8px 14px;
-        border-radius: var(--radius-sm);
-        font-weight: 600;
-        text-decoration: none;
-        transition: all var(--time-transition);
-        display: inline-block;
-        border: none;
-        cursor: pointer;
-    }
-    
-    .btn-disapprove:hover {
-        background: #e53935; 
-    }
-    
-    .badge {
-        padding: 4px 8px;
-        border-radius: 6px;
-        font-size: var(--fs-xsmall);
-        font-weight: 600;
-        text-transform: uppercase;
-    }
-    
-    .badge.counselor {
-        background-color: #dbeafe;
-        color: #1d4ed8;
-    }
-    
-    .badge.adviser {
-        background-color: #f0f9ff;
-        color: #0369a1;
-    }
-    
-    .badge.guardian {
-        background-color: #fef3c7;
-        color: #92400e;
-    }
-
-    .empty {
-      text-align: center;
-      color: var(--clr-muted);
-      padding: 20px 0;
-    }
-
-    a.back-link {
-      display: inline-block;
-      margin-bottom: 14px;
-      color: var(--clr-secondary); 
-      text-decoration: none;
-      font-weight: 600;
-      transition: color var(--time-transition);
-    }
-
-    a.back-link:hover {
-      color: var(--clr-primary); 
-    }
-    
-    .user-status {
-        font-size: var(--fs-xsmall);
-        padding: 2px 8px;
-        border-radius: 12px;
-        font-weight: 500;
-    }
-    
-    .status-pending {
-        background-color: #fef3c7;
-        color: #92400e;
-    }
-    
-    .status-inactive {
-        background-color: #fee2e2;
-        color: #dc2626;
-    }
-    
-    @media (max-width: 600px) {
-        .page-container {
-            padding: 0 10px;
-        }
-        th, td {
-            padding: 10px 8px;
-            font-size: var(--fs-xsmall);
-        }
-        .btn-approve, .btn-disapprove {
-            padding: 6px 10px;
-            font-size: var(--fs-xsmall);
-        }
-    }
-  </style>
 </head>
 <body>
   <div class="page-container">
