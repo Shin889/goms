@@ -1,0 +1,258 @@
+       .link-student-content {
+           padding: 30px;
+           max-width: 1000px;
+           margin: 0 auto;
+       }
+
+       .page-header {
+           margin-bottom: 30px;
+       }
+
+       .page-header h1 {
+           color: var(--clr-primary);
+           font-size: var(--fs-heading);
+           margin-bottom: 8px;
+       }
+
+       .page-header .subtitle {
+           color: var(--clr-muted);
+           font-size: var(--fs-normal);
+       }
+
+       /* Message Alerts */
+       .alert {
+           padding: 16px 20px;
+           border-radius: var(--radius-md);
+           margin-bottom: 25px;
+           border: 1px solid transparent;
+           animation: slideDown 0.3s ease-out;
+       }
+
+       @keyframes slideDown {
+           from {
+               opacity: 0;
+               transform: translateY(-10px);
+           }
+
+           to {
+               opacity: 1;
+               transform: translateY(0);
+           }
+       }
+
+       .alert-success {
+           background: var(--clr-success-light);
+           color: var(--clr-success);
+           border-color: var(--clr-success);
+       }
+
+       .alert-warning {
+           background: var(--clr-warning-light);
+           color: var(--clr-warning);
+           border-color: var(--clr-warning);
+       }
+
+       .alert-error {
+           background: var(--clr-danger-light);
+           color: var(--clr-danger);
+           border-color: var(--clr-danger);
+       }
+
+       /* Cards */
+       .card {
+           background: var(--clr-surface);
+           border: 1px solid var(--clr-border);
+           border-radius: var(--radius-lg);
+           padding: 30px;
+           box-shadow: var(--shadow-md);
+           margin-bottom: 30px;
+       }
+
+       .card h3 {
+           margin-top: 0;
+           color: var(--clr-secondary);
+           font-size: var(--fs-subheading);
+           margin-bottom: 20px;
+           padding-bottom: 15px;
+           border-bottom: 2px solid var(--clr-border-light);
+       }
+
+       /* Info Box */
+       .info-box {
+           background: var(--clr-primary-light);
+           border: 1px solid var(--clr-primary);
+           border-radius: var(--radius-md);
+           padding: 20px;
+           margin-bottom: 25px;
+       }
+
+       .info-box h4 {
+           color: var(--clr-primary);
+           margin-top: 0;
+           margin-bottom: 10px;
+           font-size: var(--fs-normal);
+       }
+
+       .info-box p {
+           color: var(--clr-text);
+           margin: 0;
+           font-size: var(--fs-small);
+           line-height: 1.5;
+       }
+
+       /* Form Styles */
+       .form-group {
+           margin-bottom: 25px;
+       }
+
+       .form-label {
+           display: block;
+           margin-bottom: 8px;
+           font-weight: 600;
+           color: var(--clr-secondary);
+           font-size: var(--fs-normal);
+       }
+
+       .form-control {
+           width: 100%;
+           padding: 12px 16px;
+           border: 1px solid var(--clr-border);
+           border-radius: var(--radius-md);
+           font-size: var(--fs-normal);
+           font-family: 'Inter', sans-serif;
+           background: var(--clr-surface);
+           color: var(--clr-text);
+           transition: all var(--time-transition);
+       }
+
+       .form-control:focus {
+           outline: none;
+           border-color: var(--clr-primary);
+           box-shadow: 0 0 0 3px var(--clr-primary-light);
+       }
+
+       select.form-control {
+           cursor: pointer;
+           appearance: none;
+           background-image: url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6 9 12 15 18 9'%3e%3c/polyline%3e%3c/svg%3e");
+           background-repeat: no-repeat;
+           background-position: right 12px center;
+           background-size: 16px;
+           padding-right: 40px;
+       }
+
+       .form-help {
+           margin-top: 6px;
+           color: var(--clr-muted);
+           font-size: var(--fs-small);
+           line-height: 1.4;
+       }
+
+       /* Buttons */
+       .btn {
+           padding: 12px 28px;
+           border: none;
+           border-radius: var(--radius-md);
+           font-weight: 600;
+           cursor: pointer;
+           font-size: var(--fs-normal);
+           display: inline-flex;
+           align-items: center;
+           gap: 8px;
+           text-decoration: none;
+           transition: all var(--time-transition);
+       }
+
+       .btn-primary {
+           background: var(--clr-primary);
+           color: white;
+       }
+
+       .btn-primary:hover {
+           background: var(--clr-primary-dark);
+           transform: translateY(-1px);
+           box-shadow: var(--shadow-md);
+       }
+
+       /* Table Styles */
+       .students-table {
+           width: 100%;
+           border-collapse: collapse;
+           margin-top: 15px;
+       }
+
+       .students-table th {
+           background: var(--clr-bg-light);
+           color: var(--clr-secondary);
+           font-weight: 600;
+           text-align: left;
+           padding: 12px 16px;
+           border-bottom: 2px solid var(--clr-border-light);
+           font-size: var(--fs-small);
+           text-transform: uppercase;
+           letter-spacing: 0.5px;
+       }
+
+       .students-table td {
+           padding: 12px 16px;
+           border-bottom: 1px solid var(--clr-border-light);
+           color: var(--clr-text);
+           font-size: var(--fs-small);
+       }
+
+       .students-table tr:hover {
+           background: var(--clr-bg-light);
+       }
+
+       .students-table tr:last-child td {
+           border-bottom: none;
+       }
+
+       .student-name {
+           font-weight: 600;
+           color: var(--clr-text);
+       }
+
+       .student-details {
+           color: var(--clr-muted);
+           font-size: var(--fs-xsmall);
+       }
+
+       .empty-state {
+           text-align: center;
+           padding: 40px 20px;
+           color: var(--clr-muted);
+       }
+
+       .empty-state h4 {
+           color: var(--clr-secondary);
+           margin-bottom: 10px;
+           font-size: var(--fs-subheading);
+       }
+
+       .empty-state p {
+           margin-bottom: 20px;
+           max-width: 500px;
+           margin-left: auto;
+           margin-right: auto;
+       }
+
+       @media (max-width: 768px) {
+           .link-student-content {
+               padding: 20px;
+           }
+
+           .card {
+               padding: 20px;
+           }
+
+           .students-table {
+               display: block;
+               overflow-x: auto;
+           }
+
+           .btn {
+               width: 100%;
+               justify-content: center;
+           }
+       }

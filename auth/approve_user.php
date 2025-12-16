@@ -1,8 +1,7 @@
 <?php
 include('../config/db.php');
 include('../includes/auth_check.php');
-// ADD THIS LINE: Include the functions file that contains logAction()
-include('../includes/functions.php'); // <-- ADD THIS LINE
+include('../includes/functions.php'); 
 
 // Check if user is admin
 if ($_SESSION['role'] != 'admin') {

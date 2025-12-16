@@ -2,7 +2,7 @@
 include('../includes/auth_check.php');
 checkRole(['admin']);
 include('../config/db.php');
-
+include('../includes/functions.php');
 // Get export parameters
 $report_type = $_GET['type'] ?? $_POST['type'] ?? 'summary';
 $format = $_GET['format'] ?? $_POST['format'] ?? 'pdf';
@@ -40,10 +40,18 @@ function generateGuidanceOfficeSummary($conn, $start_date, $end_date, $period, $
         FROM complaints 
         WHERE DATE(created_at) BETWEEN ? AND ?
     ");
-    $stmt->bind_param("ss", $start_date, $end_date);
-    $stmt->execute();
-    $result = $stmt->get_result();
-    $summary['new_cases'] = $result->fetch_assoc()['count'];
+    
+    // Check if prepare succeeded
+    if (!$stmt) {
+        error_log("SQL Error: " . $conn->error);
+        $summary['new_cases'] = 0;
+    } else {
+        $stmt->bind_param("ss", $start_date, $end_date);
+        $stmt->execute();
+        $result = $stmt->get_result();
+        $summary['new_cases'] = $result->fetch_assoc()['count'] ?? 0;
+        $stmt->close();
+    }
     
     // Total referrals
     $stmt = $conn->prepare("
@@ -51,10 +59,17 @@ function generateGuidanceOfficeSummary($conn, $start_date, $end_date, $period, $
         FROM referrals 
         WHERE DATE(created_at) BETWEEN ? AND ?
     ");
-    $stmt->bind_param("ss", $start_date, $end_date);
-    $stmt->execute();
-    $result = $stmt->get_result();
-    $summary['referrals'] = $result->fetch_assoc()['count'];
+    
+    if (!$stmt) {
+        error_log("SQL Error (referrals): " . $conn->error);
+        $summary['referrals'] = 0;
+    } else {
+        $stmt->bind_param("ss", $start_date, $end_date);
+        $stmt->execute();
+        $result = $stmt->get_result();
+        $summary['referrals'] = $result->fetch_assoc()['count'] ?? 0;
+        $stmt->close();
+    }
     
     // Appointments scheduled
     $stmt = $conn->prepare("
@@ -63,10 +78,17 @@ function generateGuidanceOfficeSummary($conn, $start_date, $end_date, $period, $
         WHERE DATE(created_at) BETWEEN ? AND ?
         AND status != 'cancelled'
     ");
-    $stmt->bind_param("ss", $start_date, $end_date);
-    $stmt->execute();
-    $result = $stmt->get_result();
-    $summary['appointments'] = $result->fetch_assoc()['count'];
+    
+    if (!$stmt) {
+        error_log("SQL Error (appointments): " . $conn->error);
+        $summary['appointments'] = 0;
+    } else {
+        $stmt->bind_param("ss", $start_date, $end_date);
+        $stmt->execute();
+        $result = $stmt->get_result();
+        $summary['appointments'] = $result->fetch_assoc()['count'] ?? 0;
+        $stmt->close();
+    }
     
     // Sessions conducted
     $stmt = $conn->prepare("
@@ -75,10 +97,17 @@ function generateGuidanceOfficeSummary($conn, $start_date, $end_date, $period, $
         WHERE DATE(start_time) BETWEEN ? AND ?
         AND status = 'completed'
     ");
-    $stmt->bind_param("ss", $start_date, $end_date);
-    $stmt->execute();
-    $result = $stmt->get_result();
-    $summary['sessions'] = $result->fetch_assoc()['count'];
+    
+    if (!$stmt) {
+        error_log("SQL Error (sessions): " . $conn->error);
+        $summary['sessions'] = 0;
+    } else {
+        $stmt->bind_param("ss", $start_date, $end_date);
+        $stmt->execute();
+        $result = $stmt->get_result();
+        $summary['sessions'] = $result->fetch_assoc()['count'] ?? 0;
+        $stmt->close();
+    }
     
     // Reports submitted
     $stmt = $conn->prepare("
@@ -86,10 +115,17 @@ function generateGuidanceOfficeSummary($conn, $start_date, $end_date, $period, $
         FROM reports 
         WHERE DATE(submission_date) BETWEEN ? AND ?
     ");
-    $stmt->bind_param("ss", $start_date, $end_date);
-    $stmt->execute();
-    $result = $stmt->get_result();
-    $summary['reports'] = $result->fetch_assoc()['count'];
+    
+    if (!$stmt) {
+        error_log("SQL Error (reports): " . $conn->error);
+        $summary['reports'] = 0;
+    } else {
+        $stmt->bind_param("ss", $start_date, $end_date);
+        $stmt->execute();
+        $result = $stmt->get_result();
+        $summary['reports'] = $result->fetch_assoc()['count'] ?? 0;
+        $stmt->close();
+    }
     
     // Total active cases (complaints not closed)
     $stmt = $conn->prepare("
@@ -97,9 +133,16 @@ function generateGuidanceOfficeSummary($conn, $start_date, $end_date, $period, $
         FROM complaints 
         WHERE status != 'closed'
     ");
-    $stmt->execute();
-    $result = $stmt->get_result();
-    $summary['ongoing_cases'] = $result->fetch_assoc()['count'];
+    
+    if (!$stmt) {
+        error_log("SQL Error (ongoing_cases): " . $conn->error);
+        $summary['ongoing_cases'] = 0;
+    } else {
+        $stmt->execute();
+        $result = $stmt->get_result();
+        $summary['ongoing_cases'] = $result->fetch_assoc()['count'] ?? 0;
+        $stmt->close();
+    }
     
     // Resolved cases (complaints closed within period)
     $stmt = $conn->prepare("
@@ -108,10 +151,17 @@ function generateGuidanceOfficeSummary($conn, $start_date, $end_date, $period, $
         WHERE status = 'closed'
         AND DATE(updated_at) BETWEEN ? AND ?
     ");
-    $stmt->bind_param("ss", $start_date, $end_date);
-    $stmt->execute();
-    $result = $stmt->get_result();
-    $summary['resolved_cases'] = $result->fetch_assoc()['count'];
+    
+    if (!$stmt) {
+        error_log("SQL Error (resolved_cases): " . $conn->error);
+        $summary['resolved_cases'] = 0;
+    } else {
+        $stmt->bind_param("ss", $start_date, $end_date);
+        $stmt->execute();
+        $result = $stmt->get_result();
+        $summary['resolved_cases'] = $result->fetch_assoc()['count'] ?? 0;
+        $stmt->close();
+    }
     
     // 2. CASELOAD DISTRIBUTION
     // By grade level
@@ -123,12 +173,18 @@ function generateGuidanceOfficeSummary($conn, $start_date, $end_date, $period, $
         GROUP BY s.grade_level
         ORDER BY s.grade_level
     ");
-    $stmt->bind_param("ss", $start_date, $end_date);
-    $stmt->execute();
-    $result = $stmt->get_result();
+    
     $summary['by_grade'] = [];
-    while ($row = $result->fetch_assoc()) {
-        $summary['by_grade'][] = $row;
+    if (!$stmt) {
+        error_log("SQL Error (by_grade): " . $conn->error);
+    } else {
+        $stmt->bind_param("ss", $start_date, $end_date);
+        $stmt->execute();
+        $result = $stmt->get_result();
+        while ($row = $result->fetch_assoc()) {
+            $summary['by_grade'][] = $row;
+        }
+        $stmt->close();
     }
     
     // By concern category
@@ -139,12 +195,18 @@ function generateGuidanceOfficeSummary($conn, $start_date, $end_date, $period, $
         GROUP BY category
         ORDER BY count DESC
     ");
-    $stmt->bind_param("ss", $start_date, $end_date);
-    $stmt->execute();
-    $result = $stmt->get_result();
+    
     $summary['by_category'] = [];
-    while ($row = $result->fetch_assoc()) {
-        $summary['by_category'][] = $row;
+    if (!$stmt) {
+        error_log("SQL Error (by_category): " . $conn->error);
+    } else {
+        $stmt->bind_param("ss", $start_date, $end_date);
+        $stmt->execute();
+        $result = $stmt->get_result();
+        while ($row = $result->fetch_assoc()) {
+            $summary['by_category'][] = $row;
+        }
+        $stmt->close();
     }
     
     // 3. COUNSELOR ACTIVITY
@@ -159,12 +221,18 @@ function generateGuidanceOfficeSummary($conn, $start_date, $end_date, $period, $
         GROUP BY co.id, co.name
         ORDER BY sessions_count DESC
     ");
-    $stmt->bind_param("ss", $start_date, $end_date);
-    $stmt->execute();
-    $result = $stmt->get_result();
+    
     $summary['counselor_activity'] = [];
-    while ($row = $result->fetch_assoc()) {
-        $summary['counselor_activity'][] = $row;
+    if (!$stmt) {
+        error_log("SQL Error (counselor_activity): " . $conn->error);
+    } else {
+        $stmt->bind_param("ss", $start_date, $end_date);
+        $stmt->execute();
+        $result = $stmt->get_result();
+        while ($row = $result->fetch_assoc()) {
+            $summary['counselor_activity'][] = $row;
+        }
+        $stmt->close();
     }
     
     // 4. INTERVENTIONS PROVIDED
@@ -175,10 +243,17 @@ function generateGuidanceOfficeSummary($conn, $start_date, $end_date, $period, $
         FROM sessions s
         WHERE DATE(start_time) BETWEEN ? AND ?
     ");
-    $stmt->bind_param("ss", $start_date, $end_date);
-    $stmt->execute();
-    $result = $stmt->get_result();
-    $summary['interventions'] = $result->fetch_assoc();
+    
+    $summary['interventions'] = ['with_interventions' => 0, 'total_sessions' => 0];
+    if (!$stmt) {
+        error_log("SQL Error (interventions): " . $conn->error);
+    } else {
+        $stmt->bind_param("ss", $start_date, $end_date);
+        $stmt->execute();
+        $result = $stmt->get_result();
+        $summary['interventions'] = $result->fetch_assoc() ?? ['with_interventions' => 0, 'total_sessions' => 0];
+        $stmt->close();
+    }
     
     // 5. STUDENT DEMOGRAPHICS
     $stmt = $conn->prepare("
@@ -190,12 +265,18 @@ function generateGuidanceOfficeSummary($conn, $start_date, $end_date, $period, $
         WHERE DATE(c.created_at) BETWEEN ? AND ?
         GROUP BY gender
     ");
-    $stmt->bind_param("ss", $start_date, $end_date);
-    $stmt->execute();
-    $result = $stmt->get_result();
+    
     $summary['demographics'] = [];
-    while ($row = $result->fetch_assoc()) {
-        $summary['demographics'][] = $row;
+    if (!$stmt) {
+        error_log("SQL Error (demographics): " . $conn->error);
+    } else {
+        $stmt->bind_param("ss", $start_date, $end_date);
+        $stmt->execute();
+        $result = $stmt->get_result();
+        while ($row = $result->fetch_assoc()) {
+            $summary['demographics'][] = $row;
+        }
+        $stmt->close();
     }
     
     return $summary;
