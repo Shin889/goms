@@ -136,10 +136,10 @@ if (!empty($linked_students)) {
             <span class="label">Dashboard</span>
         </a>
         
-        <a href="link_student.php" class="nav-link">
+       <!--  <a href="link_student.php" class="nav-link">
             <span class="icon"><i class="fas fa-link"></i></span>
             <span class="label">Link Student</span>
-        </a>
+        </a> -->
         
         <a href="appointments.php" class="nav-link active">
             <span class="icon"><i class="fas fa-calendar-alt"></i></span>
