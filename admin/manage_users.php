@@ -4,6 +4,13 @@ checkRole(['admin']);
 include('../config/db.php');
 include('../includes/functions.php');
 
+$user_id = intval($_SESSION['user_id']);
+$stmt = $conn->prepare("SELECT * FROM users WHERE id = ?");
+$stmt->bind_param("i", $user_id);
+$stmt->execute();
+$result = $stmt->get_result();
+$admin = $result->fetch_assoc();
+
 $status_message = '';
 $status_type = '';
 
@@ -129,177 +136,218 @@ $result = $conn->query("
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Manage Users</title>
-  <link rel="stylesheet" href="../utils/css/root.css"> 
+  <!-- Add ALL the CSS files from your dashboard -->
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="../utils/css/root.css">
+  <link rel="stylesheet" href="../utils/css/dashboard.css"> <!-- IMPORTANT: This contains sidebar styles -->
+  <link rel="stylesheet" href="../utils/css/admin_dashboard.css"> <!-- IMPORTANT: This contains admin-specific styles -->
   <link rel="stylesheet" href="../utils/css/manage_users.css"> 
-  <link rel="stylesheet" href="../utils/css/dashboard_layout.css"> 
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
 </head>
 <body>
+  <!-- Sidebar from dashboard -->
+  <nav class="sidebar" id="sidebar">
+    <button id="sidebarToggle" class="toggle-btn">☰</button>
 
-  <div class="page-container">
-    <h2 class="page-title">User Management</h2>
-    <p class="page-subtitle">Manage all user accounts, approve pending registrations, and monitor user status.</p>
-    
-    <?php if ($status_message): ?>
-        <div class="status-message <?= $status_type; ?>">
-            <i class="fas fa-info-circle"></i>
-            <?= htmlspecialchars($status_message); ?>
-        </div>
-    <?php endif; ?>
-    
-    <!-- Filters Section -->
-    <div class="filter-section">
-        <div class="filter-title">Filter Users</div>
-        <form method="GET" action="" class="filter-grid">
-            <div class="filter-group">
-                <label class="filter-label">Role</label>
-                <select name="role" class="filter-select">
-                    <option value="">All Roles</option>
-                    <option value="counselor">Counselor</option>
-                    <option value="adviser">Adviser</option>
-                    <option value="guardian">Guardian</option>
-                </select>
-            </div>
-            
-            <div class="filter-group">
-                <label class="filter-label">Status</label>
-                <select name="status" class="filter-select">
-                    <option value="">All Status</option>
-                    <option value="pending">Pending Approval</option>
-                    <option value="active">Active</option>
-                    <option value="inactive">Inactive</option>
-                </select>
-            </div>
-            
-            <div class="filter-group">
-                <label class="filter-label">Sort By</label>
-                <select name="sort" class="filter-select">
-                    <option value="newest">Newest First</option>
-                    <option value="oldest">Oldest First</option>
-                    <option value="name">Name (A-Z)</option>
-                </select>
-            </div>
-        </form>
-        
-        <div class="filter-buttons">
-            <button type="submit" class="btn-filter" onclick="document.forms[0].submit();">
-                <i class="fas fa-filter"></i> Apply Filters
-            </button>
-            <a href="manage_users.php" class="btn-reset">
-                <i class="fas fa-redo"></i> Reset Filters
-            </a>
-        </div>
+    <h2 class="logo">GOMS Admin</h2>
+    <div class="sidebar-user">
+      <i class="fas fa-user-shield"></i> Admin · <?= htmlspecialchars($admin['full_name'] ?? $admin['username']); ?>
     </div>
 
-    <!-- Users Table -->
-    <div class="card">
-      <table>
-        <thead>
-          <tr>
-            <th>User Information</th>
-            <th>Role</th>
-            <th>Status</th>
-            <th>Registration Date</th>
-            <th>Actions</th>
-          </tr>
-        </thead>
-        <tbody>
-          <?php if ($result->num_rows > 0): ?>
-            <?php while($row = $result->fetch_assoc()): 
-                // Determine status class
-                $status_class = 'status-inactive';
-                if ($row['is_active'] == 1 && $row['is_approved'] == 1) {
-                    $status_class = 'status-active';
-                } elseif ($row['is_approved'] == 0) {
-                    $status_class = 'status-pending';
-                }
-                
-                // Determine status text
-                $status_text = 'Inactive';
-                if ($row['is_active'] == 1 && $row['is_approved'] == 1) {
-                    $status_text = 'Active';
-                } elseif ($row['is_approved'] == 0) {
-                    $status_text = 'Pending Approval';
-                }
-            ?>
-              <tr>
-                <td>
-                    <div class="user-info">
-                        <div class="user-name"><?= htmlspecialchars($row['full_name']); ?></div>
-                        <div class="user-details">
-                            <div><i class="fas fa-user"></i> @<?= htmlspecialchars($row['username']); ?></div>
-                            <?php if ($row['email']): ?>
-                                <div><i class="fas fa-envelope"></i> <?= htmlspecialchars($row['email']); ?></div>
-                            <?php endif; ?>
-                            <?php if ($row['phone']): ?>
-                                <div><i class="fas fa-phone"></i> <?= htmlspecialchars($row['phone']); ?></div>
-                            <?php endif; ?>
-                        </div>
-                    </div>
-                </td>
-                <td>
-                    <span class="role-badge role-<?= $row['role']; ?>">
-                        <?= ucfirst($row['role']); ?>
-                    </span>
-                </td>
-                <td>
-                    <span class="status-badge <?= $status_class; ?>">
-                        <?= $status_text; ?>
-                    </span>
-                </td>
-                <td>
-                    <?= date('M d, Y', strtotime($row['created_at'])); ?><br>
-                    <small><?= date('h:i A', strtotime($row['created_at'])); ?></small>
-                </td>
-                <td>
-                    <div class="action-buttons">
-                        <?php if ($row['is_approved'] == 0): ?>
-                            <!-- Pending Approval - Show Approve button -->
-                            <a href="?action=approve&id=<?= $row['id']; ?>" 
-                               class="btn-action btn-approve"
-                               onclick="return confirm('Approve user <?= htmlspecialchars(addslashes($row['full_name'])); ?>? This will activate their account.');">
-                                <i class="fas fa-check"></i> Approve
-                            </a>
-                        <?php elseif ($row['is_active'] == 1): ?>
-                            <!-- Active - Show Disapprove button -->
-                            <a href="?action=disapprove&id=<?= $row['id']; ?>" 
-                               class="btn-action btn-disapprove"
-                               onclick="return confirm('Disapprove user <?= htmlspecialchars(addslashes($row['full_name'])); ?>? This will deactivate their account.');">
-                                <i class="fas fa-times"></i> Disapprove
-                            </a>
-                        <?php else: ?>
-                            <!-- Inactive - Show Approve button -->
-                            <a href="?action=approve&id=<?= $row['id']; ?>" 
-                               class="btn-action btn-approve"
-                               onclick="return confirm('Activate user <?= htmlspecialchars(addslashes($row['full_name'])); ?>? This will approve their account.');">
-                                <i class="fas fa-check"></i> Activate
-                            </a>
-                        <?php endif; ?>
-                        
-                        <!-- Delete button (always available except for admins) -->
-                        <a href="?action=delete&id=<?= $row['id']; ?>" 
-                           class="btn-action btn-delete"
-                           onclick="return confirm('WARNING: Permanently delete user <?= htmlspecialchars(addslashes($row['full_name'])); ?>? This action cannot be undone.');">
-                            <i class="fas fa-trash-alt"></i> Delete
-                        </a>
-                    </div>
-                </td>
-              </tr>
-            <?php endwhile; ?>
-          <?php else: ?>
+    <a href="dashboard.php" class="nav-link">
+      <span class="icon"><i class="fas fa-tachometer-alt"></i></span><span class="label">Dashboard</span>
+    </a>
+    <a href="manage_users.php" class="nav-link active">
+      <span class="icon"><i class="fas fa-users"></i></span><span class="label">Manage Users</span>
+    </a>
+    <a href="../auth/approve_user.php" class="nav-link">
+      <span class="icon"><i class="fas fa-user-check"></i></span><span class="label">Approve Accounts</span>
+    </a>
+ <!--    <a href="manage_adviser_sections.php" class="nav-link">
+      <span class="icon"><i class="fas fa-chalkboard-teacher"></i></span><span class="label">Manage Sections</span>
+    </a> -->
+    <a href="audit_logs.php" class="nav-link">
+      <span class="icon"><i class="fas fa-clipboard-list"></i></span><span class="label">View Audit Logs</span>
+    </a>
+    <a href="reports.php" class="nav-link">
+      <span class="icon"><i class="fas fa-chart-bar"></i></span><span class="label">Generate Reports</span>
+    </a>
+    <a href="notifications.php" class="nav-link">
+      <span class="icon"><i class="fas fa-bell"></i></span><span class="label">Notifications</span>
+    </a>
+
+    <a href="../auth/logout.php" class="logout-link">
+      <i class="fas fa-sign-out-alt"></i> Logout
+    </a>
+  </nav>
+
+  <main class="content" id="mainContent">
+    <div class="page-container">
+      <h2 class="page-title">User Management</h2>
+      <p class="page-subtitle">Manage all user accounts, approve pending registrations, and monitor user status.</p>
+      
+      <?php if ($status_message): ?>
+          <div class="status-message <?= $status_type; ?>">
+              <i class="fas fa-info-circle"></i>
+              <?= htmlspecialchars($status_message); ?>
+          </div>
+      <?php endif; ?>
+      
+      <!-- Filters Section -->
+      <div class="filter-section">
+          <div class="filter-title">Filter Users</div>
+          <form method="GET" action="" class="filter-grid">
+              <div class="filter-group">
+                  <label class="filter-label">Role</label>
+                  <select name="role" class="filter-select">
+                      <option value="">All Roles</option>
+                      <option value="counselor">Counselor</option>
+                      <option value="adviser">Adviser</option>
+                      <option value="guardian">Guardian</option>
+                  </select>
+              </div>
+              
+              <div class="filter-group">
+                  <label class="filter-label">Status</label>
+                  <select name="status" class="filter-select">
+                      <option value="">All Status</option>
+                      <option value="pending">Pending Approval</option>
+                      <option value="active">Active</option>
+                      <option value="inactive">Inactive</option>
+                  </select>
+              </div>
+              
+              <div class="filter-group">
+                  <label class="filter-label">Sort By</label>
+                  <select name="sort" class="filter-select">
+                      <option value="newest">Newest First</option>
+                      <option value="oldest">Oldest First</option>
+                      <option value="name">Name (A-Z)</option>
+                  </select>
+              </div>
+          </form>
+          
+          <div class="filter-buttons">
+              <button type="submit" class="btn-filter" onclick="document.forms[0].submit();">
+                  <i class="fas fa-filter"></i> Apply Filters
+              </button>
+              <a href="manage_users.php" class="btn-reset">
+                  <i class="fas fa-redo"></i> Reset Filters
+              </a>
+          </div>
+      </div>
+
+      <!-- Users Table -->
+      <div class="card">
+        <table>
+          <thead>
             <tr>
-                <td colspan="5" class="empty">
-                    <i class="fas fa-users-slash"></i>
-                    <h3>No Users Found</h3>
-                    <p>There are no users in the system matching your criteria.</p>
-                </td>
+              <th>User Information</th>
+              <th>Role</th>
+              <th>Status</th>
+              <th>Registration Date</th>
+              <th>Actions</th>
             </tr>
-          <?php endif; ?>
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            <?php if ($result->num_rows > 0): ?>
+              <?php while($row = $result->fetch_assoc()): 
+                  // Determine status class
+                  $status_class = 'status-inactive';
+                  if ($row['is_active'] == 1 && $row['is_approved'] == 1) {
+                      $status_class = 'status-active';
+                  } elseif ($row['is_approved'] == 0) {
+                      $status_class = 'status-pending';
+                  }
+                  
+                  // Determine status text
+                  $status_text = 'Inactive';
+                  if ($row['is_active'] == 1 && $row['is_approved'] == 1) {
+                      $status_text = 'Active';
+                  } elseif ($row['is_approved'] == 0) {
+                      $status_text = 'Pending Approval';
+                  }
+              ?>
+                <tr>
+                  <td>
+                      <div class="user-info">
+                          <div class="user-name"><?= htmlspecialchars($row['full_name']); ?></div>
+                          <div class="user-details">
+                              <div><i class="fas fa-user"></i> @<?= htmlspecialchars($row['username']); ?></div>
+                              <?php if ($row['email']): ?>
+                                  <div><i class="fas fa-envelope"></i> <?= htmlspecialchars($row['email']); ?></div>
+                              <?php endif; ?>
+                              <?php if ($row['phone']): ?>
+                                  <div><i class="fas fa-phone"></i> <?= htmlspecialchars($row['phone']); ?></div>
+                              <?php endif; ?>
+                          </div>
+                      </div>
+                  </td>
+                  <td>
+                      <span class="role-badge role-<?= $row['role']; ?>">
+                          <?= ucfirst($row['role']); ?>
+                      </span>
+                  </td>
+                  <td>
+                      <span class="status-badge <?= $status_class; ?>">
+                          <?= $status_text; ?>
+                      </span>
+                  </td>
+                  <td>
+                      <?= date('M d, Y', strtotime($row['created_at'])); ?><br>
+                      <small><?= date('h:i A', strtotime($row['created_at'])); ?></small>
+                  </td>
+                  <td>
+                      <div class="action-buttons">
+                          <?php if ($row['is_approved'] == 0): ?>
+                              <!-- Pending Approval - Show Approve button -->
+                              <a href="?action=approve&id=<?= $row['id']; ?>" 
+                                 class="btn-action btn-approve"
+                                 onclick="return confirm('Approve user <?= htmlspecialchars(addslashes($row['full_name'])); ?>? This will activate their account.');">
+                                  <i class="fas fa-check"></i> Approve
+                              </a>
+                          <?php elseif ($row['is_active'] == 1): ?>
+                              <!-- Active - Show Disapprove button -->
+                              <a href="?action=disapprove&id=<?= $row['id']; ?>" 
+                                 class="btn-action btn-disapprove"
+                                 onclick="return confirm('Disapprove user <?= htmlspecialchars(addslashes($row['full_name'])); ?>? This will deactivate their account.');">
+                                  <i class="fas fa-times"></i> Disapprove
+                              </a>
+                          <?php else: ?>
+                              <!-- Inactive - Show Approve button -->
+                              <a href="?action=approve&id=<?= $row['id']; ?>" 
+                                 class="btn-action btn-approve"
+                                 onclick="return confirm('Activate user <?= htmlspecialchars(addslashes($row['full_name'])); ?>? This will approve their account.');">
+                                  <i class="fas fa-check"></i> Activate
+                              </a>
+                          <?php endif; ?>
+                          
+                          <!-- Delete button (always available except for admins) -->
+                          <a href="?action=delete&id=<?= $row['id']; ?>" 
+                             class="btn-action btn-delete"
+                             onclick="return confirm('WARNING: Permanently delete user <?= htmlspecialchars(addslashes($row['full_name'])); ?>? This action cannot be undone.');">
+                              <i class="fas fa-trash-alt"></i> Delete
+                          </a>
+                      </div>
+                  </td>
+                </tr>
+              <?php endwhile; ?>
+            <?php else: ?>
+              <tr>
+                  <td colspan="5" class="empty">
+                      <i class="fas fa-users-slash"></i>
+                      <h3>No Users Found</h3>
+                      <p>There are no users in the system matching your criteria.</p>
+                  </td>
+              </tr>
+            <?php endif; ?>
+          </tbody>
+        </table>
+      </div>
     </div>
-  </div>
-  
+  </main>
+
+  <script src="../utils/js/sidebar.js"></script>
   <script>
     // Auto-submit form on filter change
     document.addEventListener('DOMContentLoaded', function() {
@@ -326,6 +374,18 @@ $result = $conn->query("
                 }
             });
         });
+        
+        // Initialize sidebar toggle
+        const sidebarToggle = document.getElementById('sidebarToggle');
+        const sidebar = document.getElementById('sidebar');
+        const mainContent = document.getElementById('mainContent');
+        
+        if (sidebarToggle && sidebar) {
+            sidebarToggle.addEventListener('click', function() {
+                sidebar.classList.toggle('collapsed');
+                mainContent.classList.toggle('expanded');
+            });
+        }
     });
   </script>
 </body>

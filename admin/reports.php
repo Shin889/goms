@@ -3,6 +3,13 @@ include('../includes/auth_check.php');
 checkRole(['admin']);
 include('../config/db.php');
 
+$user_id = intval($_SESSION['user_id']);
+$stmt = $conn->prepare("SELECT * FROM users WHERE id = ?");
+$stmt->bind_param("i", $user_id);
+$stmt->execute();
+$admin_result = $stmt->get_result();
+$admin = $admin_result->fetch_assoc();
+
 // Get filter parameters
 $report_type = $_GET['type'] ?? 'summary';
 $period = $_GET['period'] ?? 'monthly';
@@ -159,9 +166,46 @@ $summary['total_resolved'] = $summary['cases']['resolved_cases'] ?? 0;
   <link rel="stylesheet" href="../utils/css/root.css">
   <link rel="stylesheet" href="../utils/css/dashboard_layout.css">
   <link rel="stylesheet" href="../utils/css/reports.css">
+  <link rel="stylesheet" href="../utils/css/dashboard.css"> 
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
 </head>
 <body>
+   <nav class="sidebar" id="sidebar">
+    <button id="sidebarToggle" class="toggle-btn">☰</button>
+
+    <h2 class="logo">GOMS Admin</h2>
+    <div class="sidebar-user">
+      <i class="fas fa-user-shield"></i> Admin · <?= htmlspecialchars($admin['full_name'] ?? $admin['username']); ?>
+    </div>
+
+    <a href="dashboard.php" class="nav-link">
+      <span class="icon"><i class="fas fa-tachometer-alt"></i></span><span class="label">Dashboard</span>
+    </a>
+    <a href="manage_users.php" class="nav-link">
+      <span class="icon"><i class="fas fa-users"></i></span><span class="label">Manage Users</span>
+    </a>
+    <a href="../auth/approve_user.php" class="nav-link">
+      <span class="icon"><i class="fas fa-user-check"></i></span><span class="label">Approve Accounts</span>
+    </a>
+    <!-- <a href="manage_adviser_sections.php" class="nav-link">
+      <span class="icon"><i class="fas fa-chalkboard-teacher"></i></span><span class="label">Manage Sections</span>
+    </a> -->
+    <a href="audit_logs.php" class="nav-link">
+      <span class="icon"><i class="fas fa-clipboard-list"></i></span><span class="label">View Audit Logs</span>
+    </a>
+    <a href="reports.php" class="nav-link active">
+      <span class="icon"><i class="fas fa-chart-bar"></i></span><span class="label">Generate Reports</span>
+    </a>
+    <a href="notifications.php" class="nav-link">
+      <span class="icon"><i class="fas fa-bell"></i></span><span class="label">Notifications</span>
+    </a>
+
+    <a href="../auth/logout.php" class="logout-link">
+      <i class="fas fa-sign-out-alt"></i> Logout
+    </a>
+  </nav>
+
+    <main class="content" id="mainContent">
   <div class="page-container">
     <h2 class="page-title">Reports & Exports</h2>
     <p class="page-subtitle">Generate comprehensive reports in Guidance Office format and export for DepEd submission.</p>
@@ -380,7 +424,35 @@ $summary['total_resolved'] = $summary['cases']['resolved_cases'] ?? 0;
       </div>
     </div>
   </div>
-  
+  </main>
+
+    <script src="../utils/js/sidebar.js"></script>
+  <script>
+    // Initialize sidebar toggle
+    document.addEventListener('DOMContentLoaded', function() {
+        const sidebarToggle = document.getElementById('sidebarToggle');
+        const sidebar = document.getElementById('sidebar');
+        const mainContent = document.getElementById('mainContent');
+        
+        if (sidebarToggle && sidebar) {
+            sidebarToggle.addEventListener('click', function() {
+                sidebar.classList.toggle('collapsed');
+                mainContent.classList.toggle('expanded');
+            });
+        }
+        
+        // Your existing auto-submit code continues...
+        const filterSelects = document.querySelectorAll('.filter-select, .filter-input');
+        filterSelects.forEach(select => {
+            select.addEventListener('change', function() {
+                setTimeout(() => {
+                    document.forms[0].submit();
+                }, 300);
+            });
+        });
+    });
+  </script>
+
   <script>
     document.addEventListener('DOMContentLoaded', function() {
       // Handle period selection

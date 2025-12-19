@@ -68,8 +68,10 @@ $recent_logs = $stmt->get_result();
     <div class="sidebar-user">
       <i class="fas fa-user-shield"></i> Admin · <?= htmlspecialchars($admin['full_name'] ?? $admin['username']); ?>
     </div>
-
-    <a href="#" class="nav-link active" data-page="manage_users.php">
+ <a href="#" class="nav-link active">
+      <span class="icon"><i class="fas fa-tachometer-alt"></i></span><span class="label">Dashboard</span>
+    </a>
+    <a href="#" class="nav-link " data-page="manage_users.php">
       <span class="icon"><i class="fas fa-users"></i></span><span class="label">Manage Users</span>
     </a>
     <a href="#" class="nav-link" data-page="../auth/approve_user.php">
@@ -168,10 +170,10 @@ $recent_logs = $stmt->get_result();
             <div class="action-label">Approve Accounts</div>
           </a>
           
-          <a href="manage_adviser_sections.php" class="action-btn">
+          <!-- <a href="manage_adviser_sections.php" class="action-btn">
             <div class="action-icon"><i class="fas fa-chalkboard-teacher"></i></div>
             <div class="action-label">Manage Sections</div>
-          </a>
+          </a> -->
           
           <a href="audit_logs.php" class="action-btn">
             <div class="action-icon"><i class="fas fa-clipboard-list"></i></div>
