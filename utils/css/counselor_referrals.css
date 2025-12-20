@@ -348,3 +348,13 @@
          flex-direction: row;
      }
  }
+
+ .category-badge {
+    background-color: var(--clr-primary-light);
+    color: var(--clr-primary-dark);
+    padding: 3px 8px;
+    border-radius: 4px;
+    font-size: 0.8em;
+    display: inline-block;
+    margin-bottom: 5px;
+}

@@ -76,6 +76,7 @@ $stats_sql = "
         SUM(CASE WHEN s.status = 'completed' THEN 1 ELSE 0 END) as completed,
         SUM(CASE WHEN s.status = 'in_progress' THEN 1 ELSE 0 END) as in_progress,
         SUM(CASE WHEN s.status = 'scheduled' THEN 1 ELSE 0 END) as scheduled,
+        SUM(CASE WHEN s.status = 'cancelled' THEN 1 ELSE 0 END) as cancelled,
         AVG(TIMESTAMPDIFF(MINUTE, s.start_time, s.end_time)) as avg_duration
     FROM sessions s
     $where_sql
@@ -94,10 +95,10 @@ if ($stats_stmt) {
     $stats = ['total' => 0, 'completed' => 0, 'in_progress' => 0, 'scheduled' => 0, 'avg_duration' => 0];
 }
 
-// Get sessions
+// Get sessions - CORRECTED based on actual table structure
 $sql = "
     SELECT 
-        s.*, 
+        s.*,
         st.first_name, 
         st.last_name,
         st.grade_level,
@@ -227,13 +228,14 @@ $students_stmt->close();
         <div class="filters-grid">
           <div class="filter-group">
             <label class="filter-label">Status</label>
-            <select name="status" class="filter-select">
-              <option value="all" <?= $filter_status === 'all' ? 'selected' : '' ?>>All Status</option>
-              <option value="scheduled" <?= $filter_status === 'scheduled' ? 'selected' : '' ?>>Scheduled</option>
-              <option value="in_progress" <?= $filter_status === 'in_progress' ? 'selected' : '' ?>>In Progress</option>
-              <option value="completed" <?= $filter_status === 'completed' ? 'selected' : '' ?>>Completed</option>
-              <option value="cancelled" <?= $filter_status === 'cancelled' ? 'selected' : '' ?>>Cancelled</option>
-            </select>
+           <select name="type" class="filter-select">
+    <option value="all" <?= $filter_type === 'all' ? 'selected' : '' ?>>All Types</option>
+    <option value="regular" <?= $filter_type === 'regular' ? 'selected' : '' ?>>Regular</option>
+    <option value="initial" <?= $filter_type === 'initial' ? 'selected' : '' ?>>Initial Assessment</option>
+    <option value="followup" <?= $filter_type === 'followup' ? 'selected' : '' ?>>Follow-up</option>
+    <option value="crisis" <?= $filter_type === 'crisis' ? 'selected' : '' ?>>Crisis Intervention</option>
+    <option value="group" <?= $filter_type === 'group' ? 'selected' : '' ?>>Group Session</option>
+</select>
           </div>
           
           <div class="filter-group">
@@ -326,21 +328,31 @@ $students_stmt->close();
                 <td>
                   <span class="duration"><?= $row['duration_minutes']; ?> min</span>
                 </td>
-                <td>
-                  <div style="display: flex; flex-direction: column; gap: 5px;">
-                    <span class="badge <?= $type_class; ?>">
-                      <?= ucfirst($row['session_type'] ?? 'Regular'); ?>
-                    </span>
-                    <span style="color: var(--clr-muted); font-size: 0.85rem;">
-                      <i class="fas fa-map-marker-alt"></i> <?= htmlspecialchars($row['location']); ?>
-                    </span>
-                    <?php if ($row['notes_draft']): ?>
-                      <div class="notes-preview" title="<?= htmlspecialchars($row['notes_draft']) ?>">
-                        <?= htmlspecialchars(substr($row['notes_draft'], 0, 30)) . (strlen($row['notes_draft']) > 30 ? '...' : ''); ?>
-                      </div>
-                    <?php endif; ?>
-                  </div>
-                </td>
+               <td>
+    <div style="display: flex; flex-direction: column; gap: 5px;">
+        <span class="badge <?= $type_class; ?>">
+            <?= ucfirst($row['session_type'] ?: 'Regular'); ?>
+        </span>
+        <span style="color: var(--clr-muted); font-size: 0.85rem;">
+            <i class="fas fa-map-marker-alt"></i> 
+            <?= htmlspecialchars($row['location'] ?: 'Not specified'); ?>
+            • 
+            <i class="fas fa-video"></i> 
+            <?= ucfirst(str_replace('-', ' ', $row['mode'])); ?>
+        </span>
+        <?php if ($row['issues_discussed']): ?>
+            <div class="notes-preview" title="<?= htmlspecialchars($row['issues_discussed']) ?>">
+                <small>Issues: <?= htmlspecialchars(substr($row['issues_discussed'], 0, 30)) . (strlen($row['issues_discussed']) > 30 ? '...' : ''); ?></small>
+            </div>
+        <?php endif; ?>
+        <?php if ($row['follow_up_needed']): ?>
+            <div style="color: var(--clr-warning); font-size: 0.8rem;">
+                <i class="fas fa-calendar-check"></i> 
+                Follow-up: <?= $row['follow_up_date'] ? date('M d, Y', strtotime($row['follow_up_date'])) : 'Date not set'; ?>
+            </div>
+        <?php endif; ?>
+    </div>
+</td>
                 <td>
                   <span class="badge <?= $status_class; ?>">
                     <?= ucfirst(str_replace('_', ' ', $row['status'])); ?>

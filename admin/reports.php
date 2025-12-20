@@ -34,129 +34,195 @@ if (!empty($start_date) && !empty($end_date)) {
     $end_date = date('Y-m-t');
 }
 
-// Fetch summary statistics
-$summary = [];
+// Initialize summary array with empty values
+$summary = [
+    'referral_cases' => ['new_referrals' => 0, 'ongoing_referrals' => 0, 'completed_referrals' => 0],
+    'referrals' => 0,
+    'appointments' => 0,
+    'sessions' => 0,
+    'reports' => 0,
+    'by_grade' => [],
+    'by_category' => [],
+    'counselor_activity' => []
+];
 
-// 1. CASE STATISTICS
-$stmt = $conn->prepare("
-    SELECT 
-        COUNT(DISTINCT CASE WHEN DATE(created_at) BETWEEN ? AND ? THEN id END) as new_cases,
-        COUNT(DISTINCT CASE WHEN status != 'closed' THEN id END) as ongoing_cases,
-        COUNT(DISTINCT CASE WHEN status = 'closed' AND DATE(updated_at) BETWEEN ? AND ? THEN id END) as resolved_cases
-    FROM complaints
-");
-$stmt->bind_param("ssss", $start_date, $end_date, $start_date, $end_date);
-$stmt->execute();
-$result = $stmt->get_result();
-$summary['cases'] = $result->fetch_assoc();
+// 1. REFERRAL STATISTICS
+try {
+    $stmt = $conn->prepare("
+        SELECT 
+            COUNT(DISTINCT CASE WHEN DATE(created_at) BETWEEN ? AND ? THEN id END) as new_referrals,
+            COUNT(DISTINCT CASE WHEN status NOT IN ('completed', 'cancelled') THEN id END) as ongoing_referrals,
+            COUNT(DISTINCT CASE WHEN status = 'completed' AND DATE(updated_at) BETWEEN ? AND ? THEN id END) as completed_referrals
+        FROM referrals
+    ");
+    if ($stmt) {
+        $stmt->bind_param("ssss", $start_date, $end_date, $start_date, $end_date);
+        if ($stmt->execute()) {
+            $result = $stmt->get_result();
+            $summary['referral_cases'] = $result->fetch_assoc();
+        }
+    }
+} catch (Exception $e) {
+    error_log("Error in referral stats: " . $e->getMessage());
+}
 
 // Total referrals
-$stmt = $conn->prepare("
-    SELECT COUNT(*) as total
-    FROM referrals 
-    WHERE DATE(created_at) BETWEEN ? AND ?
-");
-$stmt->bind_param("ss", $start_date, $end_date);
-$stmt->execute();
-$result = $stmt->get_result();
-$summary['referrals'] = $result->fetch_assoc()['total'];
+try {
+    $stmt = $conn->prepare("
+        SELECT COUNT(*) as total
+        FROM referrals 
+        WHERE DATE(created_at) BETWEEN ? AND ?
+    ");
+    if ($stmt) {
+        $stmt->bind_param("ss", $start_date, $end_date);
+        if ($stmt->execute()) {
+            $result = $stmt->get_result();
+            $row = $result->fetch_assoc();
+            $summary['referrals'] = $row['total'] ?? 0;
+        }
+    }
+} catch (Exception $e) {
+    error_log("Error in total referrals: " . $e->getMessage());
+}
 
 // Appointments scheduled
-$stmt = $conn->prepare("
-    SELECT COUNT(*) as total
-    FROM appointments 
-    WHERE DATE(created_at) BETWEEN ? AND ?
-    AND status != 'cancelled'
-");
-$stmt->bind_param("ss", $start_date, $end_date);
-$stmt->execute();
-$result = $stmt->get_result();
-$summary['appointments'] = $result->fetch_assoc()['total'];
+try {
+    $stmt = $conn->prepare("
+        SELECT COUNT(*) as total
+        FROM appointments 
+        WHERE DATE(created_at) BETWEEN ? AND ?
+        AND status != 'cancelled'
+    ");
+    if ($stmt) {
+        $stmt->bind_param("ss", $start_date, $end_date);
+        if ($stmt->execute()) {
+            $result = $stmt->get_result();
+            $row = $result->fetch_assoc();
+            $summary['appointments'] = $row['total'] ?? 0;
+        }
+    }
+} catch (Exception $e) {
+    error_log("Error in appointments: " . $e->getMessage());
+}
 
 // Sessions conducted
-$stmt = $conn->prepare("
-    SELECT COUNT(*) as total
-    FROM sessions 
-    WHERE DATE(start_time) BETWEEN ? AND ?
-    AND status = 'completed'
-");
-$stmt->bind_param("ss", $start_date, $end_date);
-$stmt->execute();
-$result = $stmt->get_result();
-$summary['sessions'] = $result->fetch_assoc()['total'];
+try {
+    $stmt = $conn->prepare("
+        SELECT COUNT(*) as total
+        FROM sessions 
+        WHERE DATE(start_time) BETWEEN ? AND ?
+        AND status = 'completed'
+    ");
+    if ($stmt) {
+        $stmt->bind_param("ss", $start_date, $end_date);
+        if ($stmt->execute()) {
+            $result = $stmt->get_result();
+            $row = $result->fetch_assoc();
+            $summary['sessions'] = $row['total'] ?? 0;
+        }
+    }
+} catch (Exception $e) {
+    error_log("Error in sessions: " . $e->getMessage());
+}
 
 // Reports submitted
-$stmt = $conn->prepare("
-    SELECT COUNT(*) as total
-    FROM reports 
-    WHERE DATE(submission_date) BETWEEN ? AND ?
-");
-$stmt->bind_param("ss", $start_date, $end_date);
-$stmt->execute();
-$result = $stmt->get_result();
-$summary['reports'] = $result->fetch_assoc()['total'];
-
-// 2. CASELOAD DISTRIBUTION
-$stmt = $conn->prepare("
-    SELECT s.grade_level, COUNT(c.id) as count
-    FROM complaints c
-    JOIN students s ON c.student_id = s.id
-    WHERE DATE(c.created_at) BETWEEN ? AND ?
-    GROUP BY s.grade_level
-    ORDER BY s.grade_level
-");
-$stmt->bind_param("ss", $start_date, $end_date);
-$stmt->execute();
-$result = $stmt->get_result();
-$summary['by_grade'] = [];
-while ($row = $result->fetch_assoc()) {
-    $summary['by_grade'][] = $row;
+try {
+    $stmt = $conn->prepare("
+        SELECT COUNT(*) as total
+        FROM reports 
+        WHERE DATE(submission_date) BETWEEN ? AND ?
+    ");
+    if ($stmt) {
+        $stmt->bind_param("ss", $start_date, $end_date);
+        if ($stmt->execute()) {
+            $result = $stmt->get_result();
+            $row = $result->fetch_assoc();
+            $summary['reports'] = $row['total'] ?? 0;
+        }
+    }
+} catch (Exception $e) {
+    error_log("Error in reports: " . $e->getMessage());
 }
 
-// By concern category
-$stmt = $conn->prepare("
-    SELECT category, COUNT(*) as count
-    FROM complaints
-    WHERE DATE(created_at) BETWEEN ? AND ?
-    GROUP BY category
-    ORDER BY count DESC
-");
-$stmt->bind_param("ss", $start_date, $end_date);
-$stmt->execute();
-$result = $stmt->get_result();
-$summary['by_category'] = [];
-while ($row = $result->fetch_assoc()) {
-    $summary['by_category'][] = $row;
+// 2. REFERRAL DISTRIBUTION
+try {
+    $stmt = $conn->prepare("
+        SELECT s.grade_level, COUNT(r.id) as count
+        FROM referrals r
+        JOIN students s ON r.student_id = s.id
+        WHERE DATE(r.created_at) BETWEEN ? AND ?
+        GROUP BY s.grade_level
+        ORDER BY s.grade_level
+    ");
+    if ($stmt) {
+        $stmt->bind_param("ss", $start_date, $end_date);
+        if ($stmt->execute()) {
+            $result = $stmt->get_result();
+            $summary['by_grade'] = [];
+            while ($row = $result->fetch_assoc()) {
+                $summary['by_grade'][] = $row;
+            }
+        }
+    }
+} catch (Exception $e) {
+    error_log("Error in by_grade: " . $e->getMessage());
 }
 
-// 3. COUNSELOR ACTIVITY - FIXED
-$stmt = $conn->prepare("
-    SELECT 
-        u.full_name as counselor_name,
-        COUNT(DISTINCT s.id) as sessions_count,
-        COUNT(DISTINCT r.id) as reports_count
-    FROM counselors co
-    JOIN users u ON co.user_id = u.id
-    LEFT JOIN sessions s ON co.id = s.counselor_id AND DATE(s.start_time) BETWEEN ? AND ?
-    LEFT JOIN reports r ON s.id = r.session_id
-    GROUP BY co.id, u.full_name
-    ORDER BY sessions_count DESC
-");
-if (!$stmt) {
-    die("Prepare failed: (" . $conn->errno . ") " . $conn->error);
-}
-$stmt->bind_param("ss", $start_date, $end_date);
-$stmt->execute();
-$result = $stmt->get_result();
-$summary['counselor_activity'] = [];
-while ($row = $result->fetch_assoc()) {
-    $summary['counselor_activity'][] = $row;
+// By referral category
+try {
+    $stmt = $conn->prepare("
+        SELECT category, COUNT(*) as count
+        FROM referrals
+        WHERE DATE(created_at) BETWEEN ? AND ?
+        GROUP BY category
+        ORDER BY count DESC
+    ");
+    if ($stmt) {
+        $stmt->bind_param("ss", $start_date, $end_date);
+        if ($stmt->execute()) {
+            $result = $stmt->get_result();
+            $summary['by_category'] = [];
+            while ($row = $result->fetch_assoc()) {
+                $summary['by_category'][] = $row;
+            }
+        }
+    }
+} catch (Exception $e) {
+    error_log("Error in by_category: " . $e->getMessage());
 }
 
-// Calculate totals
-$summary['total_new_cases'] = $summary['cases']['new_cases'] ?? 0;
-$summary['total_ongoing'] = $summary['cases']['ongoing_cases'] ?? 0;
-$summary['total_resolved'] = $summary['cases']['resolved_cases'] ?? 0;
+// 3. COUNSELOR ACTIVITY
+try {
+    $stmt = $conn->prepare("
+        SELECT 
+            u.full_name as counselor_name,
+            COUNT(DISTINCT s.id) as sessions_count,
+            COUNT(DISTINCT r.id) as reports_count
+        FROM counselors co
+        JOIN users u ON co.user_id = u.id
+        LEFT JOIN sessions s ON co.id = s.counselor_id AND DATE(s.start_time) BETWEEN ? AND ?
+        LEFT JOIN reports r ON s.id = r.session_id
+        GROUP BY co.id, u.full_name
+        ORDER BY sessions_count DESC
+    ");
+    if ($stmt) {
+        $stmt->bind_param("ss", $start_date, $end_date);
+        if ($stmt->execute()) {
+            $result = $stmt->get_result();
+            $summary['counselor_activity'] = [];
+            while ($row = $result->fetch_assoc()) {
+                $summary['counselor_activity'][] = $row;
+            }
+        }
+    }
+} catch (Exception $e) {
+    error_log("Error in counselor activity: " . $e->getMessage());
+}
+
+// Calculate totals with null safety
+$summary['total_new_cases'] = $summary['referral_cases']['new_referrals'] ?? 0;
+$summary['total_ongoing'] = $summary['referral_cases']['ongoing_referrals'] ?? 0;
+$summary['total_resolved'] = $summary['referral_cases']['completed_referrals'] ?? 0;
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -280,127 +346,128 @@ $summary['total_resolved'] = $summary['cases']['resolved_cases'] ?? 0;
       </div>
     </div>
     
-    <?php if ($report_type == 'summary'): ?>
-      <!-- Summary Report -->
-      <div class="summary-grid">
-        <div class="summary-card cases">
-          <div class="summary-header">
-            <div class="summary-title">Case Statistics</div>
-            <div class="summary-icon"><i class="fas fa-folder-open"></i></div>
-          </div>
-          <div class="summary-value"><?= $summary['total_new_cases']; ?></div>
-          <div class="summary-details">
-            <div>New Cases: <?= $summary['total_new_cases']; ?></div>
-            <div>Ongoing: <?= $summary['total_ongoing']; ?></div>
-            <div>Resolved: <?= $summary['total_resolved']; ?></div>
-          </div>
-        </div>
-        
-        <div class="summary-card activity">
-          <div class="summary-header">
-            <div class="summary-title">Activity Summary</div>
-            <div class="summary-icon"><i class="fas fa-chart-line"></i></div>
-          </div>
-          <div class="summary-value"><?= $summary['appointments']; ?></div>
-          <div class="summary-details">
-            <div>Appointments: <?= $summary['appointments']; ?></div>
-            <div>Sessions: <?= $summary['sessions']; ?></div>
-            <div>Reports: <?= $summary['reports']; ?></div>
-          </div>
-        </div>
-        
-        <div class="summary-card distribution">
-          <div class="summary-header">
-            <div class="summary-title">Caseload Distribution</div>
-            <div class="summary-icon"><i class="fas fa-layer-group"></i></div>
-          </div>
-          <div class="summary-value"><?= count($summary['by_grade']); ?></div>
-          <div class="summary-details">
-            <div>Grade Levels: <?= count($summary['by_grade']); ?></div>
-            <div>Concern Categories: <?= count($summary['by_category']); ?></div>
-            <div>Referrals: <?= $summary['referrals']; ?></div>
-          </div>
-        </div>
-        
-        <div class="summary-card counselors">
-          <div class="summary-header">
-            <div class="summary-title">Counselor Activity</div>
-            <div class="summary-icon"><i class="fas fa-user-md"></i></div>
-          </div>
-          <div class="summary-value"><?= count($summary['counselor_activity']); ?></div>
-          <div class="summary-details">
-            <div>Active Counselors: <?= count($summary['counselor_activity']); ?></div>
-            <div>Total Sessions: <?= $summary['sessions']; ?></div>
-            <div>Total Reports: <?= $summary['reports']; ?></div>
-          </div>
-        </div>
+<?php if ($report_type == 'summary'): ?>
+  <!-- Summary Report -->
+  <div class="summary-grid">
+    <div class="summary-card cases">
+      <div class="summary-header">
+        <div class="summary-title">Referral Statistics</div>
+        <div class="summary-icon"><i class="fas fa-folder-open"></i></div>
       </div>
+      <div class="summary-value"><?= $summary['total_new_cases']; ?></div>
+      <div class="summary-details">
+        <div>New Referrals: <?= $summary['total_new_cases']; ?></div>
+        <div>Ongoing: <?= $summary['total_ongoing']; ?></div>
+        <div>Completed: <?= $summary['total_resolved']; ?></div>
+      </div>
+    </div>
+    
+    <div class="summary-card activity">
+      <div class="summary-header">
+        <div class="summary-title">Activity Summary</div>
+        <div class="summary-icon"><i class="fas fa-chart-line"></i></div>
+      </div>
+      <div class="summary-value"><?= $summary['appointments']; ?></div>
+      <div class="summary-details">
+        <div>Appointments: <?= $summary['appointments']; ?></div>
+        <div>Sessions: <?= $summary['sessions']; ?></div>
+        <div>Reports: <?= $summary['reports']; ?></div>
+      </div>
+    </div>
+    
+   <!-- In the distribution summary card -->
+<div class="summary-card distribution">
+  <div class="summary-header">
+    <div class="summary-title">Referral Distribution</div>
+    <div class="summary-icon"><i class="fas fa-layer-group"></i></div>
+  </div>
+  <div class="summary-value"><?= is_array($summary['by_grade']) ? count($summary['by_grade']) : 0; ?></div>
+  <div class="summary-details">
+    <div>Grade Levels: <?= is_array($summary['by_grade']) ? count($summary['by_grade']) : 0; ?></div>
+    <div>Categories: <?= is_array($summary['by_category']) ? count($summary['by_category']) : 0; ?></div>
+    <div>Total Referrals: <?= $summary['referrals']; ?></div>
+  </div>
+</div>
+    
+    <div class="summary-card counselors">
+      <div class="summary-header">
+        <div class="summary-title">Counselor Activity</div>
+        <div class="summary-icon"><i class="fas fa-user-md"></i></div>
+      </div>
+      <div class="summary-value"><?= count($summary['counselor_activity']); ?></div>
+      <div class="summary-details">
+        <div>Active Counselors: <?= count($summary['counselor_activity']); ?></div>
+        <div>Total Sessions: <?= $summary['sessions']; ?></div>
+        <div>Total Reports: <?= $summary['reports']; ?></div>
+      </div>
+    </div>
       
       <!-- Detailed Reports -->
-      <div class="detail-cards">
-        <div class="detail-card">
-          <div class="detail-title">
-            <i class="fas fa-graduation-cap"></i> By Grade Level
+<div class="detail-cards">
+  <div class="detail-card">
+    <div class="detail-title">
+      <i class="fas fa-graduation-cap"></i> By Grade Level
+    </div>
+    <div class="detail-list">
+      <?php if (!empty($summary['by_grade']) && is_array($summary['by_grade'])): ?>
+        <?php foreach ($summary['by_grade'] as $grade): ?>
+          <div class="detail-item">
+            <span class="item-label">Grade <?= htmlspecialchars($grade['grade_level']); ?></span>
+            <span class="item-value"><?= $grade['count']; ?></span>
           </div>
-          <div class="detail-list">
-            <?php if (!empty($summary['by_grade'])): ?>
-              <?php foreach ($summary['by_grade'] as $grade): ?>
-                <div class="detail-item">
-                  <span class="item-label">Grade <?= htmlspecialchars($grade['grade_level']); ?></span>
-                  <span class="item-value"><?= $grade['count']; ?></span>
-                </div>
-              <?php endforeach; ?>
-            <?php else: ?>
-              <div class="empty-state">
-                <i class="fas fa-chart-pie"></i>
-                <p>No grade level data available</p>
-              </div>
-            <?php endif; ?>
-          </div>
+        <?php endforeach; ?>
+      <?php else: ?>
+        <div class="empty-state">
+          <i class="fas fa-chart-pie"></i>
+          <p>No grade level data available</p>
         </div>
-        
-        <div class="detail-card">
-          <div class="detail-title">
-            <i class="fas fa-tags"></i> By Concern Category
+      <?php endif; ?>
+    </div>
+  </div>
+  
+  <div class="detail-card">
+    <div class="detail-title">
+      <i class="fas fa-tags"></i> By Concern Category
+    </div>
+    <div class="detail-list">
+      <?php if (!empty($summary['by_category']) && is_array($summary['by_category'])): ?>
+        <?php foreach ($summary['by_category'] as $category): ?>
+          <div class="detail-item">
+            <span class="item-label"><?= ucfirst(htmlspecialchars($category['category'])); ?></span>
+            <span class="item-value"><?= $category['count']; ?></span>
           </div>
-          <div class="detail-list">
-            <?php if (!empty($summary['by_category'])): ?>
-              <?php foreach ($summary['by_category'] as $category): ?>
-                <div class="detail-item">
-                  <span class="item-label"><?= ucfirst(htmlspecialchars($category['category'])); ?></span>
-                  <span class="item-value"><?= $category['count']; ?></span>
-                </div>
-              <?php endforeach; ?>
-            <?php else: ?>
-              <div class="empty-state">
-                <i class="fas fa-tags"></i>
-                <p>No category data available</p>
-              </div>
-            <?php endif; ?>
-          </div>
+        <?php endforeach; ?>
+      <?php else: ?>
+        <div class="empty-state">
+          <i class="fas fa-tags"></i>
+          <p>No category data available</p>
         </div>
-        
-        <div class="detail-card">
-          <div class="detail-title">
-            <i class="fas fa-user-md"></i> Counselor Performance
+      <?php endif; ?>
+    </div>
+  </div>
+  
+  <div class="detail-card">
+    <div class="detail-title">
+      <i class="fas fa-user-md"></i> Counselor Performance
+    </div>
+    <div class="detail-list">
+      <?php if (!empty($summary['counselor_activity']) && is_array($summary['counselor_activity'])): ?>
+        <?php foreach ($summary['counselor_activity'] as $counselor): ?>
+          <div class="detail-item">
+            <span class="item-label"><?= htmlspecialchars($counselor['counselor_name']); ?></span>
+            <span class="item-badge"><?= $counselor['sessions_count']; ?> sessions</span>
           </div>
-          <div class="detail-list">
-            <?php if (!empty($summary['counselor_activity'])): ?>
-              <?php foreach ($summary['counselor_activity'] as $counselor): ?>
-                <div class="detail-item">
-                  <span class="item-label"><?= htmlspecialchars($counselor['counselor_name']); ?></span>
-                  <span class="item-badge"><?= $counselor['sessions_count']; ?> sessions</span>
-                </div>
-              <?php endforeach; ?>
-            <?php else: ?>
-              <div class="empty-state">
-                <i class="fas fa-user-md"></i>
-                <p>No counselor activity data</p>
-              </div>
-            <?php endif; ?>
-          </div>
+        <?php endforeach; ?>
+      <?php else: ?>
+        <div class="empty-state">
+          <i class="fas fa-user-md"></i>
+          <p>No counselor activity data</p>
         </div>
-      </div>
+      <?php endif; ?>
+    </div>
+  </div>
+</div>
+  </div>
     <?php endif; ?>
     
     <!-- Export Options -->

@@ -64,18 +64,16 @@ $today_appointments = $today_result->fetch_assoc()['count'];
 $referrals_stmt = $conn->prepare("
     SELECT 
         r.*,
-        c.content as complaint_content,
-        c.category as complaint_category,
-        c.urgency_level,
+        r.issue_description as referral_content,
         s.first_name,
         s.last_name,
         s.grade_level,
         sec.level as section_level,
+        sec.section_name,
         a.full_name as adviser_name,
         a.username as adviser_username
     FROM referrals r
-    JOIN complaints c ON r.complaint_id = c.id
-    JOIN students s ON c.student_id = s.id
+    JOIN students s ON r.student_id = s.id
     JOIN sections sec ON s.section_id = sec.id
     JOIN advisers adv ON r.adviser_id = adv.id
     JOIN users a ON adv.user_id = a.id
@@ -91,8 +89,15 @@ $referrals_stmt = $conn->prepare("
         r.created_at DESC
     LIMIT 10
 ");
+
+if (!$referrals_stmt) {
+    die("Error preparing query: " . $conn->error);
+}
+
 $referrals_stmt->bind_param("i", $counselor_id);
-$referrals_stmt->execute();
+if (!$referrals_stmt->execute()) {
+    die("Error executing query: " . $referrals_stmt->error);
+}
 $referrals_result = $referrals_stmt->get_result();
 
 // Get session statistics
@@ -370,28 +375,28 @@ $reports_count = $reports_result->fetch_assoc()['monthly_reports'];
                       </span>
                     </div>
                     <div class="referral-category">
-                      <i class="fas fa-tag"></i> <?= ucfirst($referral['complaint_category']); ?> • 
-                      <i class="fas fa-user-tie"></i> Referred by: <?= htmlspecialchars($referral['adviser_name']); ?>
-                    </div>
+    <i class="fas fa-tag"></i> <?= ucfirst($referral['category']); ?> • 
+    <i class="fas fa-user-tie"></i> Referred by: <?= htmlspecialchars($referral['adviser_name']); ?>
+</div>
                   </div>
                   <div class="priority-badge priority-<?= strtolower($referral['priority']); ?>">
                     <?= ucfirst($referral['priority']); ?>
                   </div>
                 </div>
                 
-                <div class="referral-content">
-                  <p style="font-size: var(--fs-small); color: var(--clr-text); margin: 10px 0;">
-                    <?= htmlspecialchars(substr($referral['complaint_content'], 0, 150)); ?>
-                    <?php if (strlen($referral['complaint_content']) > 150): ?>...<?php endif; ?>
-                  </p>
-                </div>
+              <div class="referral-content">
+    <p style="font-size: var(--fs-small); color: var(--clr-text); margin: 10px 0;">
+        <?= htmlspecialchars(substr($referral['issue_description'] ?? 'No details provided', 0, 150)); ?>
+        <?php if (strlen($referral['issue_description'] ?? '') > 150): ?>...<?php endif; ?>
+    </p>
+</div>
                 
                 <div class="referral-footer">
                   <div class="referral-meta">
-                    <div class="meta-item">
-                      <i class="fas fa-exclamation-circle"></i>
-                      Urgency: <?= ucfirst($referral['urgency_level']); ?>
-                    </div>
+                   <div class="meta-item">
+    <i class="fas fa-exclamation-circle"></i>
+    Priority: <?= ucfirst($referral['priority']); ?>
+</div>
                     <div class="meta-item">
                       <i class="far fa-clock"></i>
                       <?= date('M d, Y', strtotime($referral['created_at'])); ?>

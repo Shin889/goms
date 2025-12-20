@@ -8,7 +8,7 @@ $user_id = intval($_SESSION['user_id']);
 // Get adviser info
 $adviser_info = null;
 $stmt = $conn->prepare("
-    SELECT a.*, u.full_name, sec.section_name, sec.grade_level 
+    SELECT a.id as adviser_id, u.full_name, sec.section_name, sec.grade_level 
     FROM advisers a 
     JOIN users u ON a.user_id = u.id 
     LEFT JOIN sections sec ON sec.adviser_id = a.id
@@ -16,54 +16,61 @@ $stmt = $conn->prepare("
 ");
 $stmt->bind_param("i", $user_id);
 $stmt->execute();
-$adviser_info = $stmt->get_result()->fetch_assoc();
+$result = $stmt->get_result();
+$adviser_info = $result ? $result->fetch_assoc() : null;
 
-// Get referrals created by this adviser
+// Initialize variables
 $referrals = [];
 $stats = [
     'total' => 0,
     'open' => 0,
     'scheduled' => 0,
     'in_session' => 0,
-    'completed' => 0
+    'completed' => 0,
+    'cancelled' => 0
 ];
 
-if ($adviser_info) {
+// Get referrals for the adviser
+if ($adviser_info && isset($adviser_info['adviser_id'])) {
     $stmt = $conn->prepare("
         SELECT 
             r.*,
-            c.content as complaint_content,
-            c.category,
-            c.urgency_level,
             s.first_name,
             s.last_name,
             s.student_id as student_code,
+            s.grade_level,
             sec.section_name,
-            sec.grade_level,
-            co.full_name as counselor_name,
-            cr.specialty as counselor_specialty,
+            u.full_name as counselor_name,
+            c.specialty as counselor_specialty,
+            c.handles_level as counselor_level,
             (SELECT COUNT(*) FROM appointments a WHERE a.referral_id = r.id) as appointment_count
         FROM referrals r
-        JOIN complaints c ON r.complaint_id = c.id
-        JOIN students s ON c.student_id = s.id
+        JOIN students s ON r.student_id = s.id
         JOIN sections sec ON s.section_id = sec.id
-        LEFT JOIN counselors cr ON r.counselor_id = cr.id
-        LEFT JOIN users co ON cr.user_id = co.id
+        LEFT JOIN counselors c ON r.counselor_id = c.id
+        LEFT JOIN users u ON c.user_id = u.id
         WHERE r.adviser_id = ?
         ORDER BY r.created_at DESC
         LIMIT 50
     ");
-    $stmt->bind_param("i", $adviser_info['id']);
-    $stmt->execute();
-    $referrals = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
     
-    // Calculate statistics
-    foreach ($referrals as $referral) {
-        $stats['total']++;
-        if ($referral['status'] == 'open') $stats['open']++;
-        elseif ($referral['status'] == 'scheduled') $stats['scheduled']++;
-        elseif ($referral['status'] == 'in_session') $stats['in_session']++;
-        elseif ($referral['status'] == 'completed') $stats['completed']++;
+    if ($stmt) {
+        $stmt->bind_param("i", $adviser_info['adviser_id']);
+        $stmt->execute();
+        $result = $stmt->get_result();
+        
+        if ($result) {
+            $referrals = $result->fetch_all(MYSQLI_ASSOC);
+            
+            // Calculate statistics
+            foreach ($referrals as $referral) {
+                $stats['total']++;
+                $status = $referral['status'];
+                if (isset($stats[$status])) {
+                    $stats[$status]++;
+                }
+            }
+        }
     }
 }
 ?>
@@ -73,7 +80,7 @@ if ($adviser_info) {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Referrals - GOMS Adviser</title>
+    <title>My Referrals - GOMS Adviser</title>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="../utils/css/root.css">
     <link rel="stylesheet" href="../utils/css/dashboard.css">
@@ -88,7 +95,7 @@ if ($adviser_info) {
         <h2 class="logo">GOMS Adviser</h2>
         <div class="sidebar-user">
             <i class="fas fa-chalkboard-teacher"></i> Adviser · <?= htmlspecialchars($adviser_info['full_name'] ?? 'User'); ?>
-            <?php if ($adviser_info['section_name']): ?>
+            <?php if (isset($adviser_info['section_name'])): ?>
                 <br><small>Grade <?= htmlspecialchars($adviser_info['grade_level']) ?> - 
                 <?= htmlspecialchars($adviser_info['section_name']) ?></small>
             <?php endif; ?>
@@ -102,16 +109,6 @@ if ($adviser_info) {
         <a href="students.php" class="nav-link">
             <span class="icon"><i class="fas fa-users"></i></span>
             <span class="label">My Students</span>
-        </a>
-        
-        <a href="create_complaint.php" class="nav-link">
-            <span class="icon"><i class="fas fa-plus-circle"></i></span>
-            <span class="label">Create Complaint</span>
-        </a>
-        
-        <a href="complaints.php" class="nav-link">
-            <span class="icon"><i class="fas fa-clipboard-list"></i></span>
-            <span class="label">View Complaints</span>
         </a>
         
         <a href="create_referral.php" class="nav-link">
@@ -137,7 +134,6 @@ if ($adviser_info) {
     <!-- Main Content -->
     <main class="content" id="mainContent">
         <div class="referrals-content">
-            <!-- Page Header -->
             <div class="page-header">
                 <h1>My Referrals</h1>
                 <p class="subtitle">Track counseling referrals you have created</p>
@@ -167,41 +163,9 @@ if ($adviser_info) {
                 </div>
             </div>
 
-            <!-- Filters -->
-            <div class="filters">
-                <div class="filter-group">
-                    <label for="statusFilter">Status:</label>
-                    <select id="statusFilter" class="filter-select">
-                        <option value="all">All Status</option>
-                        <option value="open">Open</option>
-                        <option value="scheduled">Scheduled</option>
-                        <option value="in_session">In Session</option>
-                        <option value="completed">Completed</option>
-                    </select>
-                </div>
-                <div class="filter-group">
-                    <label for="priorityFilter">Priority:</label>
-                    <select id="priorityFilter" class="filter-select">
-                        <option value="all">All Priority</option>
-                        <option value="critical">Critical</option>
-                        <option value="high">High</option>
-                        <option value="medium">Medium</option>
-                        <option value="low">Low</option>
-                    </select>
-                </div>
-                <div class="filter-group">
-                    <label for="counselorFilter">Counselor:</label>
-                    <select id="counselorFilter" class="filter-select">
-                        <option value="all">All Counselors</option>
-                        <option value="assigned">Assigned Only</option>
-                        <option value="unassigned">Unassigned Only</option>
-                    </select>
-                </div>
-            </div>
-
             <!-- Action Buttons -->
             <div class="action-buttons">
-                <a href="complaints.php" class="btn btn-primary">
+                <a href="create_referral.php" class="btn btn-primary">
                     <i class="fas fa-plus-circle"></i> Create New Referral
                 </a>
                 <button class="btn btn-warning" onclick="location.reload()">
@@ -212,18 +176,22 @@ if ($adviser_info) {
             <?php if (empty($referrals)): ?>
                 <div class="empty-state">
                     <h3>No referrals yet</h3>
-                    <p>Create your first referral from the Complaints page by clicking "Create Referral" on any open complaint.</p>
-                    <a href="complaints.php" class="btn btn-primary" style="margin-top: 20px;">
-                        <i class="fas fa-clipboard-list"></i> Go to Complaints
+                    <p>Create your first referral to a counselor.</p>
+                    <a href="create_referral.php" class="btn btn-primary" style="margin-top: 20px;">
+                        <i class="fas fa-plus-circle"></i> Create Referral
                     </a>
                 </div>
             <?php else: ?>
                 <div class="referrals-grid" id="referralsGrid">
-                    <?php foreach ($referrals as $referral): ?>
+                    <?php foreach ($referrals as $referral): 
+                        // Determine student level based on grade
+                        $grade = intval($referral['grade_level']);
+                        $student_level = ($grade >= 7 && $grade <= 10) ? 'Junior' : 'Senior';
+                    ?>
                         <div class="referral-card" 
                              data-status="<?= htmlspecialchars($referral['status']) ?>"
                              data-priority="<?= htmlspecialchars($referral['priority']) ?>"
-                             data-counselor="<?= $referral['counselor_name'] ? 'assigned' : 'unassigned' ?>">
+                             data-counselor="<?= !empty($referral['counselor_name']) ? 'assigned' : 'unassigned' ?>">
                             <div class="referral-header">
                                 <div class="student-info">
                                     <div class="student-name">
@@ -232,7 +200,8 @@ if ($adviser_info) {
                                     </div>
                                     <div class="student-details">
                                         Grade <?= htmlspecialchars($referral['grade_level']) ?> - 
-                                        <?= htmlspecialchars($referral['section_name']) ?>
+                                        <?= htmlspecialchars($referral['section_name']) ?> 
+                                        (<?= $student_level ?> High)
                                     </div>
                                 </div>
                                 <div class="referral-status status-<?= htmlspecialchars($referral['status']) ?>">
@@ -251,17 +220,23 @@ if ($adviser_info) {
                                     </span>
                                 </div>
                                 <div style="color: var(--clr-text); line-height: 1.6; margin-bottom: 10px;">
+                                    <strong>Issue Description:</strong><br>
+                                    <?= nl2br(htmlspecialchars(substr($referral['issue_description'], 0, 250))) ?>
+                                    <?= strlen($referral['issue_description']) > 250 ? '...' : '' ?>
+                                </div>
+                                <div style="color: var(--clr-text); line-height: 1.6; margin-bottom: 10px;">
                                     <strong>Referral Reason:</strong><br>
                                     <?= nl2br(htmlspecialchars(substr($referral['referral_reason'], 0, 250))) ?>
                                     <?= strlen($referral['referral_reason']) > 250 ? '...' : '' ?>
                                 </div>
                             </div>
                             
-                            <?php if ($referral['counselor_name']): ?>
+                            <?php if (!empty($referral['counselor_name'])): ?>
                                 <div class="counselor-info">
                                     <div class="counselor-name">
                                         <i class="fas fa-user-md"></i> 
                                         <?= htmlspecialchars($referral['counselor_name']) ?>
+                                        (<?= htmlspecialchars($referral['counselor_level']) ?> High)
                                     </div>
                                     <div class="counselor-specialty">
                                         <i class="fas fa-star"></i> 
@@ -274,7 +249,7 @@ if ($adviser_info) {
                                         <i class="fas fa-clock"></i> Awaiting Counselor Assignment
                                     </div>
                                     <div class="counselor-specialty">
-                                        No counselor assigned yet. The guidance office will assign one soon.
+                                        Counselor assignment in progress...
                                     </div>
                                 </div>
                             <?php endif; ?>
@@ -293,12 +268,6 @@ if ($adviser_info) {
                                     <?php endif; ?>
                                 </div>
                                 <div class="meta-right">
-                                    <a href="#" 
-                                       class="btn-sm" 
-                                       style="background: var(--clr-bg-light); color: var(--clr-text); text-decoration: none;"
-                                       onclick="viewReferralDetails(<?= $referral['id'] ?>)">
-                                        <i class="fas fa-eye"></i> View Details
-                                    </a>
                                     <?php if ($referral['status'] == 'open' || $referral['status'] == 'scheduled'): ?>
                                         <a href="appointments.php?referral_id=<?= $referral['id'] ?>" 
                                            class="btn-sm btn-primary" style="text-decoration: none;">
@@ -316,64 +285,9 @@ if ($adviser_info) {
 
     <script src="../utils/js/sidebar.js"></script>
     <script>
-        // Filter functionality
+        // Initialize on page load
         document.addEventListener('DOMContentLoaded', function() {
-            const statusFilter = document.getElementById('statusFilter');
-            const priorityFilter = document.getElementById('priorityFilter');
-            const counselorFilter = document.getElementById('counselorFilter');
-            const referralCards = document.querySelectorAll('.referral-card');
-            
-            function filterReferrals() {
-                const status = statusFilter.value;
-                const priority = priorityFilter.value;
-                const counselor = counselorFilter.value;
-                
-                referralCards.forEach(card => {
-                    const cardStatus = card.dataset.status;
-                    const cardPriority = card.dataset.priority;
-                    const cardCounselor = card.dataset.counselor;
-                    
-                    const statusMatch = status === 'all' || cardStatus === status;
-                    const priorityMatch = priority === 'all' || cardPriority === priority;
-                    const counselorMatch = counselor === 'all' || cardCounselor === counselor;
-                    
-                    if (statusMatch && priorityMatch && counselorMatch) {
-                        card.style.display = 'block';
-                    } else {
-                        card.style.display = 'none';
-                    }
-                });
-            }
-            
-            statusFilter.addEventListener('change', filterReferrals);
-            priorityFilter.addEventListener('change', filterReferrals);
-            counselorFilter.addEventListener('change', filterReferrals);
-            
-            // Auto-refresh every 60 seconds
-            setInterval(() => {
-                if (referralCards.length > 0) {
-                    location.reload();
-                }
-            }, 60000);
-            
-            // View referral details function
-            window.viewReferralDetails = function(referralId) {
-                // You can implement a modal or redirect to referral details page
-                alert(`Viewing details for referral ID: ${referralId}\nThis would open a detailed view or modal.`);
-            };
-            
-            // Initialize active nav link
-            const currentPage = window.location.pathname.split('/').pop();
-            const navLinks = document.querySelectorAll('.nav-link');
-            
-            navLinks.forEach(link => {
-                const href = link.getAttribute('href');
-                if (href === currentPage) {
-                    link.classList.add('active');
-                } else {
-                    link.classList.remove('active');
-                }
-            });
+            // Your sidebar and other JS initialization code
         });
     </script>
 </body>

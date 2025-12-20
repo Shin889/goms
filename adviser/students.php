@@ -103,66 +103,102 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     }
     
     if (isset($_POST['link_guardian'])) {
-        // Link guardian to student
-        $student_id = intval($_POST['student_id']);
-        $guardian_email = $_POST['guardian_email'];
-        $relationship = $_POST['relationship'];
-        $primary_guardian = isset($_POST['primary_guardian']) ? 1 : 0;
-        
-        // Check if student belongs to adviser's section
-        $check = $conn->prepare("SELECT id FROM students WHERE id = ? AND section_id = ?");
-        $check->bind_param("ii", $student_id, $adviser_info['section_id']);
-        $check->execute();
-        $check_result = $check->get_result();
-        
-        if ($check_result->num_rows > 0) {
-            // Find guardian by email
-            $stmt = $conn->prepare("
-                SELECT g.id 
-                FROM guardians g
-                JOIN users u ON g.user_id = u.id
-                WHERE u.email = ? AND u.role = 'guardian' AND u.is_active = 1
-            ");
-            $stmt->bind_param("s", $guardian_email);
-            $stmt->execute();
-            $guardian_result = $stmt->get_result();
-            
-            if ($guardian_result->num_rows > 0) {
-                $guardian = $guardian_result->fetch_assoc();
-                
-                // Check if already linked
-                $check_link = $conn->prepare("
-                    SELECT id FROM student_guardians 
-                    WHERE student_id = ? AND guardian_id = ?
-                ");
-                $check_link->bind_param("ii", $student_id, $guardian['id']);
-                $check_link->execute();
-                
-                if ($check_link->get_result()->num_rows == 0) {
-                    // Insert new link
-                    $stmt = $conn->prepare("
-                        INSERT INTO student_guardians (student_id, guardian_id, relationship, primary_guardian, linked_by)
-                        VALUES (?, ?, ?, ?, ?)
-                    ");
-                    $stmt->bind_param("iissi", $student_id, $guardian['id'], $relationship, $primary_guardian, $user_id);
-                    
-                    if ($stmt->execute()) {
-                        $_SESSION['success_message'] = "Guardian linked successfully!";
-                    } else {
-                        $_SESSION['error_message'] = "Error linking guardian: " . $conn->error;
-                    }
-                } else {
-                    $_SESSION['error_message'] = "Guardian is already linked to this student.";
-                }
-            } else {
-                $_SESSION['error_message'] = "No active guardian found with that email.";
-            }
-        } else {
-            $_SESSION['error_message'] = "Student not found in your section.";
-        }
+    // Link guardian to student
+    $student_id = intval($_POST['student_id']);
+    $guardian_email = $_POST['guardian_email'];
+    $relationship = $_POST['relationship']; // This comes from the form
+    $primary_guardian = isset($_POST['primary_guardian']) ? 1 : 0;
+    
+    // Check if student belongs to adviser's section
+    $check = $conn->prepare("SELECT id FROM students WHERE id = ? AND section_id = ?");
+    
+    // ADD ERROR CHECKING
+    if ($check === false) {
+        error_log("Prepare failed: " . $conn->error);
+        $_SESSION['error_message'] = "Database error: " . htmlspecialchars($conn->error);
         header('Location: students.php');
         exit;
     }
+    
+    $check->bind_param("ii", $student_id, $adviser_info['section_id']);
+    $check->execute();
+    $check_result = $check->get_result();
+    
+    if ($check_result->num_rows > 0) {
+        // Find guardian by email - REMOVED role check
+        $stmt = $conn->prepare("
+            SELECT g.id 
+            FROM guardians g
+            JOIN users u ON g.user_id = u.id
+            WHERE u.email = ? AND u.is_active = 1 AND u.is_approved = 1
+        ");
+        
+        // ADD ERROR CHECKING
+        if ($stmt === false) {
+            error_log("Prepare failed: " . $conn->error);
+            $_SESSION['error_message'] = "Database error: " . htmlspecialchars($conn->error);
+            header('Location: students.php');
+            exit;
+        }
+        
+        $stmt->bind_param("s", $guardian_email);
+        $stmt->execute();
+        $guardian_result = $stmt->get_result();
+        
+        if ($guardian_result->num_rows > 0) {
+            $guardian = $guardian_result->fetch_assoc();
+            
+            // Check if already linked
+            $check_link = $conn->prepare("
+                SELECT id FROM student_guardians 
+                WHERE student_id = ? AND guardian_id = ?
+            ");
+            
+            if ($check_link === false) {
+                error_log("Prepare failed: " . $conn->error);
+                $_SESSION['error_message'] = "Database error: " . htmlspecialchars($conn->error);
+                header('Location: students.php');
+                exit;
+            }
+            
+            $check_link->bind_param("ii", $student_id, $guardian['id']);
+            $check_link->execute();
+            
+            if ($check_link->get_result()->num_rows == 0) {
+                // Insert new link - FIXED: Now includes relationship column
+                $stmt = $conn->prepare("
+                    INSERT INTO student_guardians 
+                    (student_id, guardian_id, relationship, primary_guardian, linked_by)
+                    VALUES (?, ?, ?, ?, ?)
+                ");
+                
+                if ($stmt === false) {
+                    error_log("Prepare failed: " . $conn->error);
+                    $_SESSION['error_message'] = "Database error: " . htmlspecialchars($conn->error);
+                    header('Location: students.php');
+                    exit;
+                }
+                
+                // Line 147 - Now this should work
+                $stmt->bind_param("iissi", $student_id, $guardian['id'], $relationship, $primary_guardian, $user_id);
+                
+                if ($stmt->execute()) {
+                    $_SESSION['success_message'] = "Guardian linked successfully!";
+                } else {
+                    $_SESSION['error_message'] = "Error linking guardian: " . $conn->error;
+                }
+            } else {
+                $_SESSION['error_message'] = "Guardian is already linked to this student.";
+            }
+        } else {
+            $_SESSION['error_message'] = "No active, approved guardian found with email: " . htmlspecialchars($guardian_email);
+        }
+    } else {
+        $_SESSION['error_message'] = "Student not found in your section.";
+    }
+    header('Location: students.php');
+    exit;
+}
     
     if (isset($_POST['unlink_guardian'])) {
         // Unlink guardian via POST
@@ -211,7 +247,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'GET') {
     }
 }
 
-// Get students in adviser's section
+// Get students in adviser's section - UPDATED without complaints
 $students = [];
 if ($adviser_info) {
     $stmt = $conn->prepare("
@@ -219,15 +255,22 @@ if ($adviser_info) {
             s.*,
             sec.section_name,
             sec.grade_level,
-            COUNT(c.id) as complaint_count,
-            MAX(c.created_at) as last_complaint_date,
+            (
+                SELECT COUNT(*) 
+                FROM referrals r 
+                WHERE r.student_id = s.id AND r.adviser_id = ?
+            ) as referral_count,
+            (
+                SELECT MAX(created_at)
+                FROM referrals r 
+                WHERE r.student_id = s.id AND r.adviser_id = ?
+            ) as last_referral_date,
             GROUP_CONCAT(
                 CONCAT(g.relationship, ': ', u.full_name, ' (', u.email, ')') 
                 SEPARATOR ';;'
             ) as guardians_info
         FROM students s
         JOIN sections sec ON s.section_id = sec.id
-        LEFT JOIN complaints c ON s.id = c.student_id
         LEFT JOIN student_guardians sg ON s.id = sg.student_id
         LEFT JOIN guardians g ON sg.guardian_id = g.id
         LEFT JOIN users u ON g.user_id = u.id
@@ -235,9 +278,18 @@ if ($adviser_info) {
         GROUP BY s.id
         ORDER BY s.last_name, s.first_name
     ");
-    $stmt->bind_param("i", $adviser_info['id']);
-    $stmt->execute();
-    $students = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+    
+    // Bind parameters - need to use the adviser_id three times
+    $adviser_id = $adviser_info['id'];
+    $stmt->bind_param("iii", $adviser_id, $adviser_id, $adviser_id);
+    
+    if ($stmt->execute()) {
+        $students = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+    } else {
+        error_log("Error fetching students: " . $stmt->error);
+        $_SESSION['error_message'] = "Error loading student data. Please try again.";
+    }
+    $stmt->close();
 }
 
 // Export functionality - MUST be before any HTML output
@@ -249,30 +301,31 @@ if (isset($_GET['export']) && $_GET['export'] == 'csv' && !empty($students)) {
     
     // Add CSV headers
     fputcsv($output, [
-        'Student ID', 'First Name', 'Last Name', 'Middle Name',
-        'Gender', 'Date of Birth', 'Contact Number', 'Status',
-        'Guardians', 'Complaint Count', 'Last Complaint'
-    ]);
+    'Student ID', 'First Name', 'Last Name', 'Middle Name',
+    'Gender', 'Date of Birth', 'Contact Number', 'Status',
+    'Guardians', 'Referral Count', 'Last Referral'
+]);
+
     
-    // Add data
-    foreach ($students as $student) {
-        $guardians_list = !empty($student['guardians_info']) ? 
-            str_replace(';;', ', ', $student['guardians_info']) : 'None';
-        
-        fputcsv($output, [
-            $student['student_id'],
-            $student['first_name'],
-            $student['last_name'],
-            $student['middle_name'] ?? '',
-            $student['gender'] ?? '',
-            $student['dob'] ? date('m/d/Y', strtotime($student['dob'])) : '',
-            $student['contact_number'] ?? '',
-            $student['status'],
-            $guardians_list,
-            $student['complaint_count'],
-            $student['last_complaint_date'] ? date('m/d/Y', strtotime($student['last_complaint_date'])) : ''
-        ]);
-    }
+    // Update data in loop
+foreach ($students as $student) {
+    $guardians_list = !empty($student['guardians_info']) ? 
+        str_replace(';;', ', ', $student['guardians_info']) : 'None';
+    
+    fputcsv($output, [
+        $student['student_id'],
+        $student['first_name'],
+        $student['last_name'],
+        $student['middle_name'] ?? '',
+        $student['gender'] ?? '',
+        $student['dob'] ? date('m/d/Y', strtotime($student['dob'])) : '',
+        $student['contact_number'] ?? '',
+        $student['status'],
+        $guardians_list,
+        $student['referral_count'],
+        $student['last_referral_date'] ? date('m/d/Y', strtotime($student['last_referral_date'])) : ''
+    ]);
+}
     
     fclose($output);
     exit;
@@ -325,7 +378,7 @@ $guardians = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
             <span class="icon"><i class="fas fa-users"></i></span>
             <span class="label">My Students</span>
         </a>
-        
+<!--         
         <a href="create_complaint.php" class="nav-link">
             <span class="icon"><i class="fas fa-plus-circle"></i></span>
             <span class="label">Create Complaint</span>
@@ -334,8 +387,11 @@ $guardians = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
         <a href="complaints.php" class="nav-link">
             <span class="icon"><i class="fas fa-clipboard-list"></i></span>
             <span class="label">View Complaints</span>
+        </a> -->
+        <a href="create_referral.php" class="nav-link">
+            <span class="icon"><i class="fas fa-plus-circle"></i></span>
+            <span class="label">Create Referral</span>
         </a>
-        
         <a href="referrals.php" class="nav-link">
             <span class="icon"><i class="fas fa-exchange-alt"></i></span>
             <span class="label">My Referrals</span>
@@ -389,36 +445,37 @@ $guardians = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
 
             <!-- Summary Stats -->
             <?php if (!empty($students)): ?>
-                <div class="summary-stats">
-                    <div class="stat-item">
-                        <div class="stat-number"><?= count($students) ?></div>
-                        <div class="stat-label">Total Students</div>
-                    </div>
-                    <div class="stat-item">
-                        <?php
-                        $active_students = count(array_filter($students, function($s) {
-                            return $s['status'] === 'active';
-                        }));
-                        ?>
-                        <div class="stat-number"><?= $active_students ?></div>
-                        <div class="stat-label">Active Students</div>
-                    </div>
-                    <div class="stat-item">
-                        <?php
-                        $total_complaints = array_sum(array_column($students, 'complaint_count'));
-                        ?>
-                        <div class="stat-number"><?= $total_complaints ?></div>
-                        <div class="stat-label">Total Complaints</div>
-                    </div>
-                    <div class="stat-item">
-                        <?php
-                        $students_with_guardians = count(array_filter($students, function($s) {
-                            return !empty($s['guardians_info']);
-                        }));
-                        ?>
-                        <div class="stat-number"><?= $students_with_guardians ?></div>
-                        <div class="stat-label">With Guardians</div>
-                    </div>
+               <div class="summary-stats">
+    <div class="stat-item">
+        <div class="stat-number"><?= count($students) ?></div>
+        <div class="stat-label">Total Students</div>
+    </div>
+    <div class="stat-item">
+        <?php
+        $active_students = count(array_filter($students, function($s) {
+            return $s['status'] === 'active';
+        }));
+        ?>
+        <div class="stat-number"><?= $active_students ?></div>
+        <div class="stat-label">Active Students</div>
+    </div>
+    <div class="stat-item">
+        <?php
+        $total_referrals = array_sum(array_column($students, 'referral_count'));
+        ?>
+        <div class="stat-number"><?= $total_referrals ?></div>
+        <div class="stat-label">Total Referrals</div>
+    </div>
+    <div class="stat-item">
+        <?php
+        $students_with_guardians = count(array_filter($students, function($s) {
+            return !empty($s['guardians_info']);
+        }));
+        ?>
+        <div class="stat-number"><?= $students_with_guardians ?></div>
+        <div class="stat-label">With Guardians</div>
+    </div>
+
                 </div>
             <?php endif; ?>
 
@@ -513,28 +570,28 @@ $guardians = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
                                 </div>
                             <?php endif; ?>
                             
-                            <?php if ($student['complaint_count'] > 0): ?>
-                                <div class="complaint-info">
-                                    <div class="complaint-count">
-                                        <i class="fas fa-exclamation-circle"></i> 
-                                        <?= $student['complaint_count'] ?> complaint(s)
-                                    </div>
-                                    <?php if ($student['last_complaint_date']): ?>
-                                        <div class="last-complaint">
-                                            Last complaint: <?= date('M d, Y', strtotime($student['last_complaint_date'])) ?>
-                                        </div>
-                                    <?php endif; ?>
-                                </div>
-                            <?php else: ?>
-                                <div class="complaint-info" style="border-left-color: var(--clr-success); background: var(--clr-success-light);">
-                                    <div class="complaint-count" style="color: var(--clr-success);">
-                                        <i class="fas fa-check-circle"></i> No complaints
-                                    </div>
-                                    <div class="last-complaint">
-                                        Clean record
-                                    </div>
-                                </div>
-                            <?php endif; ?>
+                           <?php if ($student['referral_count'] > 0): ?>
+    <div class="referral-info">
+        <div class="referral-count">
+            <i class="fas fa-paper-plane"></i> 
+            <?= $student['referral_count'] ?> referral(s)
+        </div>
+        <?php if ($student['last_referral_date']): ?>
+            <div class="last-referral">
+                Last referral: <?= date('M d, Y', strtotime($student['last_referral_date'])) ?>
+            </div>
+        <?php endif; ?>
+    </div>
+<?php else: ?>
+    <div class="referral-info" style="border-left-color: var(--clr-success); background: var(--clr-success-light);">
+        <div class="referral-count" style="color: var(--clr-success);">
+            <i class="fas fa-check-circle"></i> No referrals
+        </div>
+        <div class="last-referral">
+            No referrals made
+        </div>
+    </div>
+<?php endif; ?>
                             
                             <div class="action-buttons">
                                 <button class="btn-small btn-primary" onclick="openLinkGuardianModal(<?= $student['id'] ?>, '<?= htmlspecialchars($student['first_name'] . ' ' . $student['last_name']) ?>')">

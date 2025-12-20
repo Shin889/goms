@@ -10,7 +10,8 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     $password = $_POST['password'];
     $role = $_POST['role'];
     $full_name = trim($_POST['full_name']);
-    $phone = trim($_POST['phone']);
+    $phone = trim($_POST['phone'] ?? '');
+    $phone = empty($phone) ? null : $phone;
     $level = isset($_POST['level']) ? trim($_POST['level']) : null;
     
     // Basic validation
@@ -77,20 +78,35 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                     
                     // If user is counselor, insert into counselors table with level
                     if ($role === 'counselor') {
-                        // Determine specialty based on level
-                        $specialty = $level === 'Senior' ? 'Senior High Counseling' : 'Junior High Counseling';
+                        // Determine levels based on level
+                        $handles_level = $level === 'Senior' ? 'Senior High Counseling' : 'Junior High Counseling';
                         
                         $stmt2 = $conn->prepare("
                             INSERT INTO counselors 
-                            (user_id, specialty, license_number, years_of_experience, max_caseload) 
+                            (user_id, handles_level, license_number, years_of_experience, max_caseload) 
                             VALUES (?, ?, NULL, NULL, 30)
                         ");
-                        $stmt2->bind_param("is", $user_id, $specialty);
+                        $stmt2->bind_param("is", $user_id, $handles_level);
                         
                         if (!$stmt2->execute()) {
                             throw new Exception("Counselor profile creation error: " . $stmt2->error);
                         }
                         $stmt2->close();
+                    }
+                    
+                    // If user is guardian, insert into guardians table with default relationship
+                    if ($role === 'guardian') {
+                        $stmt3 = $conn->prepare("
+                            INSERT INTO guardians 
+                            (user_id, relationship) 
+                            VALUES (?, 'Parent')  -- Default relationship
+                        ");
+                        $stmt3->bind_param("i", $user_id);
+                        
+                        if (!$stmt3->execute()) {
+                            throw new Exception("Guardian profile creation error: " . $stmt3->error);
+                        }
+                        $stmt3->close();
                     }
                     
                     // Log registration action

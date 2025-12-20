@@ -101,7 +101,7 @@ if ($adviser_info) {
             <span class="label">My Students</span>
         </a>
         
-        <a href="create_complaint.php" class="nav-link">
+        <!-- <a href="create_complaint.php" class="nav-link">
             <span class="icon"><i class="fas fa-plus-circle"></i></span>
             <span class="label">Create Complaint</span>
         </a>
@@ -109,7 +109,7 @@ if ($adviser_info) {
         <a href="complaints.php" class="nav-link">
             <span class="icon"><i class="fas fa-clipboard-list"></i></span>
             <span class="label">View Complaints</span>
-        </a>
+        </a> -->
         
         <a href="create_referral.php" class="nav-link">
             <span class="icon"><i class="fas fa-paper-plane"></i></span>

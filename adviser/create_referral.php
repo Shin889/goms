@@ -4,30 +4,8 @@ checkRole(['adviser']);
 include('../config/db.php');
 
 $user_id = intval($_SESSION['user_id']);
-$complaint_id = isset($_GET['complaint_id']) ? intval($_GET['complaint_id']) : 0;
 $error = '';
 $success = '';
-
-// Get complaint details
-$complaint = null;
-if ($complaint_id) {
-    $stmt = $conn->prepare("
-        SELECT c.*, s.first_name, s.last_name, s.student_id as student_code,
-               sec.section_name, sec.grade_level
-        FROM complaints c
-        JOIN students s ON c.student_id = s.id
-        JOIN sections sec ON s.section_id = sec.id
-        WHERE c.id = ? AND c.created_by_user_id = ?
-    ");
-    $stmt->bind_param("ii", $complaint_id, $user_id);
-    $stmt->execute();
-    $complaint = $stmt->get_result()->fetch_assoc();
-}
-
-if (!$complaint) {
-    header('Location: complaints.php');
-    exit;
-}
 
 // Get adviser info
 $adviser_info = null;
@@ -41,6 +19,22 @@ $stmt = $conn->prepare("
 $stmt->bind_param("i", $user_id);
 $stmt->execute();
 $adviser_info = $stmt->get_result()->fetch_assoc();
+
+// Get students from adviser's section
+$students = [];
+if ($adviser_info && isset($adviser_info['id'])) {
+    $stmt = $conn->prepare("
+        SELECT s.id, s.first_name, s.last_name, s.student_id as student_code,
+               s.grade_level, s.section_id, sec.section_name
+        FROM students s
+        JOIN sections sec ON s.section_id = sec.id
+        WHERE sec.adviser_id = ?
+        ORDER BY s.last_name, s.first_name
+    ");
+    $stmt->bind_param("i", $adviser_info['id']);
+    $stmt->execute();
+    $students = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+}
 
 // Get available counselors
 $counselors = [];
@@ -56,46 +50,55 @@ $counselors = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
 
 // Handle form submission
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    $referral_reason = trim($_POST['referral_reason']);
+    $student_id = intval($_POST['student_id']);
+    $category = $_POST['category'];
+    $issue_description = trim($_POST['issue_description']);
     $priority = $_POST['priority'];
-    $recommended_counselor_id = intval($_POST['recommended_counselor_id']);
+    $referral_reason = trim($_POST['referral_reason']);
     $notes = trim($_POST['notes'] ?? '');
     
-    if (empty($referral_reason)) {
+    // Validate
+    if (!$student_id) {
+        $error = 'Please select a student.';
+    } elseif (empty($issue_description)) {
+        $error = 'Please provide an issue description.';
+    } elseif (strlen($issue_description) < 10) {
+        $error = 'Issue description must be at least 10 characters.';
+    } elseif (empty($referral_reason)) {
         $error = 'Please provide a referral reason.';
     } elseif (strlen($referral_reason) < 10) {
         $error = 'Referral reason must be at least 10 characters.';
     } else {
-        // Create referral
-       $stmt = $conn->prepare("
-    INSERT INTO referrals 
-    (complaint_id, adviser_id, referral_reason, priority, counselor_id, notes, status, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, 'open', NOW(), NOW())
-");
-$stmt->bind_param("iisssi", $complaint_id, $adviser_info['id'], $referral_reason, $priority, $recommended_counselor_id, $notes);
+        // Create direct referral
+        $stmt = $conn->prepare("
+            INSERT INTO referrals 
+            (student_id, category, issue_description, adviser_id, 
+             referral_reason, priority, notes, status, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, 'open', NOW(), NOW())
+        ");
+        $stmt->bind_param("ississs", 
+            $student_id, 
+            $category, 
+            $issue_description,
+            $adviser_info['id'],
+            $referral_reason,
+            $priority,
+            $notes
+        );
         
         if ($stmt->execute()) {
             $referral_id = $conn->insert_id;
-            
-            // Update complaint status
-            $update_stmt = $conn->prepare("
-                UPDATE complaints 
-                SET status = 'referred', updated_at = NOW() 
-                WHERE id = ?
-            ");
-            $update_stmt->bind_param("i", $complaint_id);
-            $update_stmt->execute();
             
             // Log audit
             $audit_stmt = $conn->prepare("
                 INSERT INTO audit_logs 
                 (user_id, action, action_summary, target_table, target_id, created_at)
-                VALUES (?, 'CREATE', 'Created referral from complaint', 'referrals', ?, NOW())
+                VALUES (?, 'CREATE', 'Created direct referral', 'referrals', ?, NOW())
             ");
             $audit_stmt->bind_param("ii", $user_id, $referral_id);
             $audit_stmt->execute();
             
-            $success = 'Referral created successfully! The complaint status has been updated to "referred". Redirecting to referrals page...';
+            $success = 'Referral created successfully! Redirecting to referrals page...';
             
             // Redirect after 3 seconds
             header("refresh:3;url=referrals.php");
@@ -111,7 +114,7 @@ $stmt->bind_param("iisssi", $complaint_id, $adviser_info['id'], $referral_reason
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Create Referral - GOMS Adviser</title>
+    <title>Create Direct Referral - GOMS Adviser</title>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="../utils/css/root.css">
     <link rel="stylesheet" href="../utils/css/dashboard.css">
@@ -126,7 +129,7 @@ $stmt->bind_param("iisssi", $complaint_id, $adviser_info['id'], $referral_reason
         <h2 class="logo">GOMS Adviser</h2>
         <div class="sidebar-user">
             <i class="fas fa-chalkboard-teacher"></i> Adviser · <?= htmlspecialchars($adviser_info['full_name'] ?? 'User'); ?>
-            <?php if ($adviser_info['section_name']): ?>
+            <?php if (isset($adviser_info['section_name'])): ?>
                 <br><small>Grade <?= htmlspecialchars($adviser_info['grade_level']) ?> - 
                 <?= htmlspecialchars($adviser_info['section_name']) ?></small>
             <?php endif; ?>
@@ -140,16 +143,6 @@ $stmt->bind_param("iisssi", $complaint_id, $adviser_info['id'], $referral_reason
         <a href="students.php" class="nav-link">
             <span class="icon"><i class="fas fa-users"></i></span>
             <span class="label">My Students</span>
-        </a>
-        
-        <a href="create_complaint.php" class="nav-link">
-            <span class="icon"><i class="fas fa-plus-circle"></i></span>
-            <span class="label">Create Complaint</span>
-        </a>
-        
-        <a href="complaints.php" class="nav-link">
-            <span class="icon"><i class="fas fa-clipboard-list"></i></span>
-            <span class="label">View Complaints</span>
         </a>
         
         <a href="create_referral.php" class="nav-link active">
@@ -177,8 +170,8 @@ $stmt->bind_param("iisssi", $complaint_id, $adviser_info['id'], $referral_reason
         <div class="referral-content">
             <!-- Page Header -->
             <div class="page-header">
-                <h1>Create Referral</h1>
-                <p class="subtitle">Refer a student for counseling based on complaint</p>
+                <h1>Create Direct Referral</h1>
+                <p class="subtitle">Refer a student directly to counseling</p>
             </div>
 
             <!-- Alerts -->
@@ -194,84 +187,82 @@ $stmt->bind_param("iisssi", $complaint_id, $adviser_info['id'], $referral_reason
                 </div>
             <?php endif; ?>
 
-            <!-- Complaint Information -->
-            <div class="info-box">
-                <h3><i class="fas fa-exclamation-circle"></i> Complaint Details</h3>
-                <div class="student-details">
-                    <div class="detail-item">
-                        <span class="detail-label">Student</span>
-                        <span class="detail-value">
-                            <?= htmlspecialchars($complaint['first_name'] . ' ' . $complaint['last_name']) ?>
-                            (<?= htmlspecialchars($complaint['student_code']) ?>)
-                        </span>
-                    </div>
-                    <div class="detail-item">
-                        <span class="detail-label">Section</span>
-                        <span class="detail-value">
-                            Grade <?= htmlspecialchars($complaint['grade_level']) ?> - 
-                            <?= htmlspecialchars($complaint['section_name']) ?>
-                        </span>
-                    </div>
-                    <div class="detail-item">
-                        <span class="detail-label">Category</span>
-                        <span class="detail-value">
-                            <?= ucfirst(htmlspecialchars($complaint['category'])) ?>
-                        </span>
-                    </div>
-                    <div class="detail-item">
-                        <span class="detail-label">Urgency</span>
-                        <span class="detail-value">
-                            <?= ucfirst(htmlspecialchars($complaint['urgency_level'])) ?>
-                        </span>
-                    </div>
-                </div>
-                
-                <div class="complaint-content-box">
-                    <div class="complaint-content-title">
-                        <i class="fas fa-comment-alt"></i> Original Complaint
-                    </div>
-                    <div class="complaint-content-text">
-                        <?= nl2br(htmlspecialchars($complaint['content'])) ?>
-                    </div>
-                </div>
-            </div>
-
             <!-- Referral Form -->
             <div class="form-container">
                 <form method="POST" action="" id="referralForm">
-                    <!-- Counselor Selection -->
+                    
+                    <!-- Student Selection -->
                     <div class="form-group">
-                        <label class="form-label">
-                            <i class="fas fa-user-md"></i> Recommended Counselor
+                        <label class="form-label required">
+                            <i class="fas fa-user-graduate"></i> Select Student
                         </label>
-                        <select name="recommended_counselor_id" class="form-control" id="counselorSelect">
-                            <option value="0">No preference (assign any available counselor)</option>
-                            <?php foreach ($counselors as $counselor): ?>
-                                <option value="<?= $counselor['id'] ?>">
-                                    <?= htmlspecialchars($counselor['full_name']) ?> 
-                                    - <?= htmlspecialchars($counselor['specialty']) ?>
+                        <select name="student_id" class="form-control" required id="studentSelect">
+                            <option value="">-- Select a student --</option>
+                            <?php foreach ($students as $student): ?>
+                                <option value="<?= $student['id'] ?>">
+                                    <?= htmlspecialchars($student['last_name']) ?>, 
+                                    <?= htmlspecialchars($student['first_name']) ?>
+                                    (<?= htmlspecialchars($student['student_code']) ?>)
+                                    - Grade <?= htmlspecialchars($student['grade_level']) ?> 
+                                    <?= htmlspecialchars($student['section_name']) ?>
                                 </option>
                             <?php endforeach; ?>
                         </select>
                         <div class="form-help">
-                            This is a recommendation. The guidance office will make the final assignment.
+                            Only students from your assigned section are listed.
                         </div>
-                        
-                        <!-- Counselor Cards (Optional Visual Selection) -->
-                        <?php if (!empty($counselors)): ?>
-                            <div class="counselor-list">
-                                <div class="counselor-option" data-value="0">
-                                    <div class="counselor-name">No Preference</div>
-                                    <div class="counselor-specialty">Assign any available counselor</div>
-                                </div>
-                                <?php foreach ($counselors as $counselor): ?>
-                                    <div class="counselor-option" data-value="<?= $counselor['id'] ?>">
-                                        <div class="counselor-name"><?= htmlspecialchars($counselor['full_name']) ?></div>
-                                        <div class="counselor-specialty"><?= htmlspecialchars($counselor['specialty']) ?></div>
-                                    </div>
-                                <?php endforeach; ?>
-                            </div>
-                        <?php endif; ?>
+                    </div>
+
+                    <!-- Category -->
+                    <div class="form-group">
+                        <label class="form-label required">
+                            <i class="fas fa-tag"></i> Category
+                        </label>
+                        <select name="category" class="form-control" required>
+                            <option value="academic">Academic Concerns</option>
+                            <option value="behavioral">Behavioral Issues</option>
+                            <option value="emotional">Emotional Support</option>
+                            <option value="social">Social Skills</option>
+                            <option value="attendance">Attendance Issues</option>
+                            <option value="discipline">Disciplinary Concerns</option>
+                            <option value="family">Family Issues</option>
+                            <option value="other">Other</option>
+                        </select>
+                    </div>
+
+                    <!-- Issue Description -->
+                    <div class="form-group">
+                        <label class="form-label required">
+                            <i class="fas fa-clipboard"></i> Issue Description
+                        </label>
+                        <textarea name="issue_description" class="form-control" required 
+                                placeholder="Describe the specific issue or concern. Include:
+                                
+• What behaviors/patterns have you observed?
+• When did this start?
+• Frequency and duration
+• Specific incidents or examples
+• Impact on the student and others"></textarea>
+                        <div class="form-help">
+                            Be objective and factual. Describe what you've observed.
+                        </div>
+                    </div>
+
+                    <!-- Referral Reason -->
+                    <div class="form-group">
+                        <label class="form-label required">
+                            <i class="fas fa-comment-medical"></i> Referral Reason
+                        </label>
+                        <textarea name="referral_reason" class="form-control" required 
+                                placeholder="Explain why you're referring the student for counseling:
+                                
+• What interventions have you already tried?
+• Why do you believe counseling is needed?
+• What are your expectations from counseling?
+• Any specific goals for the student?"></textarea>
+                        <div class="form-help">
+                            Explain why counseling is the appropriate next step.
+                        </div>
                     </div>
 
                     <!-- Priority Level -->
@@ -290,26 +281,6 @@ $stmt->bind_param("iisssi", $complaint_id, $adviser_info['id'], $referral_reason
                             <div class="priority-indicator priority-medium" data-value="medium">Medium</div>
                             <div class="priority-indicator priority-high" data-value="high">High</div>
                             <div class="priority-indicator priority-critical" data-value="critical">Critical</div>
-                        </div>
-                    </div>
-
-                    <!-- Referral Reason -->
-                    <div class="form-group">
-                        <label class="form-label required">
-                            <i class="fas fa-clipboard"></i> Referral Reason
-                        </label>
-                        <textarea name="referral_reason" class="form-control" required 
-                                placeholder="Explain why this student needs counseling. Include:
-                                
-• Specific concerns and observed behaviors
-• Frequency and duration of issues
-• Impact on academic performance
-• Impact on peer relationships
-• Any parent communication regarding the issue
-• Previous interventions attempted
-• Your recommendations for the counseling approach"></textarea>
-                        <div class="form-help">
-                            Be specific and objective. This information helps the counselor prepare effectively.
                         </div>
                     </div>
 
@@ -336,11 +307,11 @@ $stmt->bind_param("iisssi", $complaint_id, $adviser_info['id'], $referral_reason
                         <button type="submit" class="btn btn-primary">
                             <i class="fas fa-paper-plane"></i> Create Referral
                         </button>
-                        <a href="complaints.php" class="btn btn-secondary">
-                            <i class="fas fa-arrow-left"></i> Back to Complaints
-                        </a>
                         <a href="referrals.php" class="btn btn-secondary">
                             <i class="fas fa-exchange-alt"></i> View My Referrals
+                        </a>
+                        <a href="students.php" class="btn btn-secondary">
+                            <i class="fas fa-arrow-left"></i> Back to Students
                         </a>
                     </div>
                 </form>
@@ -350,25 +321,7 @@ $stmt->bind_param("iisssi", $complaint_id, $adviser_info['id'], $referral_reason
 
     <script src="../utils/js/sidebar.js"></script>
     <script>
-        // Initialize form interactions
         document.addEventListener('DOMContentLoaded', function() {
-            // Counselor card selection
-            const counselorOptions = document.querySelectorAll('.counselor-option');
-            const counselorSelect = document.getElementById('counselorSelect');
-            
-            counselorOptions.forEach(option => {
-                option.addEventListener('click', function() {
-                    // Remove selected class from all options
-                    counselorOptions.forEach(opt => opt.classList.remove('selected'));
-                    
-                    // Add selected class to clicked option
-                    this.classList.add('selected');
-                    
-                    // Update select element
-                    counselorSelect.value = this.dataset.value;
-                });
-            });
-            
             // Priority indicator selection
             const priorityIndicators = document.querySelectorAll('.priority-indicator');
             const prioritySelect = document.getElementById('prioritySelect');
@@ -392,24 +345,26 @@ $stmt->bind_param("iisssi", $complaint_id, $adviser_info['id'], $referral_reason
             
             // Form validation
             document.getElementById('referralForm').addEventListener('submit', function(e) {
-                const reason = document.querySelector('textarea[name="referral_reason"]').value.trim();
-                if (reason.length < 10) {
+                const studentSelect = document.getElementById('studentSelect');
+                const issueDesc = document.querySelector('textarea[name="issue_description"]').value.trim();
+                const referralReason = document.querySelector('textarea[name="referral_reason"]').value.trim();
+                
+                if (!studentSelect.value) {
                     e.preventDefault();
-                    alert('Please provide a more detailed referral reason (at least 10 characters).');
+                    alert('Please select a student.');
                     return false;
                 }
-            });
-            
-            // Initialize active nav link
-            const currentPage = window.location.pathname.split('/').pop();
-            const navLinks = document.querySelectorAll('.nav-link');
-            
-            navLinks.forEach(link => {
-                const href = link.getAttribute('href');
-                if (href === currentPage) {
-                    link.classList.add('active');
-                } else {
-                    link.classList.remove('active');
+                
+                if (issueDesc.length < 10) {
+                    e.preventDefault();
+                    alert('Issue description must be at least 10 characters.');
+                    return false;
+                }
+                
+                if (referralReason.length < 10) {
+                    e.preventDefault();
+                    alert('Referral reason must be at least 10 characters.');
+                    return false;
                 }
             });
         });

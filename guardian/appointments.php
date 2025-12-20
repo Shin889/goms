@@ -151,10 +151,10 @@ if (!empty($linked_students)) {
             <span class="label">Request Appointment</span>
         </a>
         
-        <a href="submit_concern.php" class="nav-link">
+        <!-- <a href="submit_concern.php" class="nav-link">
             <span class="icon"><i class="fas fa-exclamation-triangle"></i></span>
             <span class="label">Submit Concern</span>
-        </a>
+        </a> -->
 
         <a href="../auth/logout.php" class="logout-link">
             <i class="fas fa-sign-out-alt"></i> Logout

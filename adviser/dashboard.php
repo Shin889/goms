@@ -14,18 +14,21 @@ $stmt = $conn->prepare("
     LEFT JOIN sections sec ON sec.adviser_id = a.id
     WHERE a.user_id = ?
 ");
-$stmt->bind_param("i", $user_id);
-$stmt->execute();
-$adviser_info = $stmt->get_result()->fetch_assoc();
+if ($stmt) {
+    $stmt->bind_param("i", $user_id);
+    $stmt->execute();
+    $adviser_info = $stmt->get_result()->fetch_assoc();
+    $stmt->close();
+}
 
-// Get dashboard stats
+// Get dashboard stats - UPDATED for direct referral system
 $stats = [
     'total_students' => 0,
-    'total_complaints' => 0,
-    'open_complaints' => 0,
-    'referred_complaints' => 0,
-    'pending_referrals' => 0,
-    'total_referrals' => 0
+    'total_referrals' => 0,
+    'open_referrals' => 0,
+    'scheduled_referrals' => 0,
+    'completed_referrals' => 0,
+    'pending_referrals' => 0
 ];
 
 if ($adviser_info) {
@@ -36,63 +39,60 @@ if ($adviser_info) {
         JOIN sections sec ON s.section_id = sec.id
         WHERE sec.adviser_id = ?
     ");
-    $stmt->bind_param("i", $adviser_info['id']);
-    $stmt->execute();
-    $result = $stmt->get_result()->fetch_assoc();
-    $stats['total_students'] = $result['count'] ?? 0;
+    if ($stmt) {
+        $stmt->bind_param("i", $adviser_info['id']);
+        $stmt->execute();
+        $result = $stmt->get_result()->fetch_assoc();
+        $stats['total_students'] = $result['count'] ?? 0;
+        $stmt->close();
+    }
 
-    // Count complaints
+    // Count referrals - UPDATED
     $stmt = $conn->prepare("
         SELECT 
             COUNT(*) as total,
-            SUM(CASE WHEN c.status = 'new' THEN 1 ELSE 0 END) as new,
-            SUM(CASE WHEN c.status = 'referred' THEN 1 ELSE 0 END) as referred
-        FROM complaints c
-        JOIN students s ON c.student_id = s.id
-        JOIN sections sec ON s.section_id = sec.id
-        WHERE sec.adviser_id = ?
-    ");
-    $stmt->bind_param("i", $adviser_info['id']);
-    $stmt->execute();
-    $result = $stmt->get_result()->fetch_assoc();
-    $stats['total_complaints'] = $result['total'] ?? 0;
-    $stats['open_complaints'] = $result['new'] ?? 0;
-    $stats['referred_complaints'] = $result['referred'] ?? 0;
-
-    // Count referrals
-    $stmt = $conn->prepare("
-        SELECT 
-            COUNT(*) as total,
-            SUM(CASE WHEN r.status = 'open' THEN 1 ELSE 0 END) as pending
+            SUM(CASE WHEN r.status = 'open' THEN 1 ELSE 0 END) as open,
+            SUM(CASE WHEN r.status = 'scheduled' THEN 1 ELSE 0 END) as scheduled,
+            SUM(CASE WHEN r.status = 'completed' THEN 1 ELSE 0 END) as completed
         FROM referrals r
         WHERE r.adviser_id = ?
     ");
-    $stmt->bind_param("i", $adviser_info['id']);
-    $stmt->execute();
-    $result = $stmt->get_result()->fetch_assoc();
-    $stats['total_referrals'] = $result['total'] ?? 0;
-    $stats['pending_referrals'] = $result['pending'] ?? 0;
+    if ($stmt) {
+        $stmt->bind_param("i", $adviser_info['id']);
+        $stmt->execute();
+        $result = $stmt->get_result()->fetch_assoc();
+        $stats['total_referrals'] = $result['total'] ?? 0;
+        $stats['open_referrals'] = $result['open'] ?? 0;
+        $stats['scheduled_referrals'] = $result['scheduled'] ?? 0;
+        $stats['completed_referrals'] = $result['completed'] ?? 0;
+        $stats['pending_referrals'] = ($result['open'] ?? 0) + ($result['scheduled'] ?? 0);
+        $stmt->close();
+    }
 }
 
-// Get recent complaints
-$recent_complaints = [];
+// Get recent referrals instead of complaints
+$recent_referrals = [];
 if ($adviser_info) {
     $stmt = $conn->prepare("
         SELECT 
-            c.*,
+            r.*,
             s.first_name,
             s.last_name,
-            s.student_id as student_code
-        FROM complaints c
-        JOIN students s ON c.student_id = s.id
-        JOIN sections sec ON s.section_id = sec.id
-        WHERE sec.adviser_id = ?
-        ORDER BY c.created_at DESC
+            s.grade_level,
+            sec.section_name
+        FROM referrals r
+        JOIN students s ON r.student_id = s.id
+        LEFT JOIN sections sec ON s.section_id = sec.id
+        WHERE r.adviser_id = ?
+        ORDER BY r.created_at DESC
         LIMIT 5
     ");
-    $stmt->bind_param("i", $adviser_info['id']);
-    $stmt->execute();
-    $recent_complaints = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+    if ($stmt) {
+        $stmt->bind_param("i", $adviser_info['id']);
+        $stmt->execute();
+        $recent_referrals = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+        $stmt->close();
+    }
 }
 ?>
 
@@ -132,20 +132,10 @@ if ($adviser_info) {
             <span class="label">My Students</span>
         </a>
         
-       <!--  <a href="create_complaint.php" class="nav-link">
+        <a href="create_referral.php" class="nav-link">
             <span class="icon"><i class="fas fa-plus-circle"></i></span>
-            <span class="label">Create Complaint</span>
-        </a> -->
-        
-        <a href="complaints.php" class="nav-link">
-            <span class="icon"><i class="fas fa-clipboard-list"></i></span>
-            <span class="label">View Complaints</span>
-        </a>
-        
-        <!-- <a href="create_referral.php" class="nav-link">
-            <span class="icon"><i class="fas fa-paper-plane"></i></span>
             <span class="label">Create Referral</span>
-        </a> -->
+        </a>
         
         <a href="referrals.php" class="nav-link">
             <span class="icon"><i class="fas fa-exchange-alt"></i></span>
@@ -178,16 +168,16 @@ if ($adviser_info) {
                     <div class="stat-label">Students in Section</div>
                 </div>
                 <div class="stat-card">
-                    <div class="stat-number"><?= $stats['total_complaints'] ?></div>
-                    <div class="stat-label">Total Complaints</div>
-                </div>
-                <div class="stat-card">
-                    <div class="stat-number"><?= $stats['open_complaints'] ?></div>
-                    <div class="stat-label">Open Complaints</div>
-                </div>
-                <div class="stat-card">
                     <div class="stat-number"><?= $stats['total_referrals'] ?></div>
-                    <div class="stat-label">Referrals Created</div>
+                    <div class="stat-label">Total Referrals</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-number"><?= $stats['open_referrals'] ?></div>
+                    <div class="stat-label">Open Referrals</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-number"><?= $stats['scheduled_referrals'] ?></div>
+                    <div class="stat-label">Scheduled</div>
                 </div>
             </div>
 
@@ -195,60 +185,66 @@ if ($adviser_info) {
             <div class="section">
                 <h3 class="section-title">Quick Actions</h3>
                 <div class="quick-actions">
-                    <a href="create_complaint.php" class="action-btn">
+                    <a href="create_referral.php" class="action-btn">
                         <span class="action-icon">📝</span>
-                        <div class="action-label">Create Complaint</div>
-                    </a>
-                    <a href="complaints.php" class="action-btn">
-                        <span class="action-icon">📋</span>
-                        <div class="action-label">View Complaints</div>
+                        <div class="action-label">Create Referral</div>
                     </a>
                     <a href="referrals.php" class="action-btn">
-                        <span class="action-icon">📨</span>
-                        <div class="action-label">My Referrals</div>
+                        <span class="action-icon">📋</span>
+                        <div class="action-label">View Referrals</div>
                     </a>
                     <a href="students.php" class="action-btn">
                         <span class="action-icon">👥</span>
                         <div class="action-label">View Students</div>
                     </a>
+                    <a href="appointments.php" class="action-btn">
+                        <span class="action-icon">📅</span>
+                        <div class="action-label">Appointments</div>
+                    </a>
                 </div>
             </div>
 
-            <!-- Recent Complaints -->
+            <!-- Recent Referrals -->
             <div class="section">
-                <h3 class="section-title">Recent Complaints</h3>
-                <?php if (empty($recent_complaints)): ?>
+                <h3 class="section-title">Recent Referrals</h3>
+                <?php if (empty($recent_referrals)): ?>
                     <div class="empty-state">
-                        <p>No complaints yet. Create your first complaint.</p>
-                        <a href="create_complaint.php" class="btn btn-primary" style="margin-top: 16px;">
-                            Create Complaint
+                        <p>No referrals yet. Create your first referral.</p>
+                        <a href="create_referral.php" class="btn btn-primary" style="margin-top: 16px;">
+                            Create Referral
                         </a>
                     </div>
                 <?php else: ?>
-                    <div class="complaints-list">
-                        <?php foreach ($recent_complaints as $complaint): ?>
-                            <div class="complaint-item">
+                    <div class="referrals-list">
+                        <?php foreach ($recent_referrals as $referral): ?>
+                            <div class="referral-item">
                                 <div>
-                                    <div class="complaint-student">
-                                        <?= htmlspecialchars($complaint['first_name'] . ' ' . $complaint['last_name']) ?>
-                                        <small>(<?= htmlspecialchars($complaint['student_code']) ?>)</small>
+                                    <div class="referral-student">
+                                        <?= htmlspecialchars($referral['first_name'] . ' ' . $referral['last_name']) ?>
+                                        <small>(Grade <?= htmlspecialchars($referral['grade_level']) ?>)</small>
                                     </div>
-                                    <div class="complaint-date">
-                                        <?= date('M d, Y h:i A', strtotime($complaint['created_at'])) ?>
-                                        • <?= ucfirst(htmlspecialchars($complaint['category'])) ?>
+                                    <div class="referral-details">
+                                        <?= date('M d, Y', strtotime($referral['created_at'])) ?>
+                                        • <?= ucfirst(htmlspecialchars($referral['category'])) ?>
+                                        <?php if ($referral['section_name']): ?>
+                                            • <?= htmlspecialchars($referral['section_name']) ?>
+                                        <?php endif; ?>
+                                    </div>
+                                    <div class="referral-reason">
+                                        <small><?= htmlspecialchars(substr($referral['referral_reason'], 0, 100)) . (strlen($referral['referral_reason']) > 100 ? '...' : '') ?></small>
                                     </div>
                                 </div>
                                 <div>
-                                    <span class="complaint-status status-badge-<?= htmlspecialchars($complaint['status']) ?>">
-                                        <?= ucfirst(htmlspecialchars($complaint['status'])) ?>
+                                    <span class="referral-status status-badge-<?= htmlspecialchars($referral['status']) ?>">
+                                        <?= ucfirst(htmlspecialchars($referral['status'])) ?>
                                     </span>
                                 </div>
                             </div>
                         <?php endforeach; ?>
                     </div>
                     <div style="margin-top: 16px; text-align: center;">
-                        <a href="complaints.php" class="btn" style="padding: 8px 16px; background: var(--clr-bg-light); color: var(--clr-text);">
-                            View All Complaints
+                        <a href="referrals.php" class="btn" style="padding: 8px 16px; background: var(--clr-bg-light); color: var(--clr-text);">
+                            View All Referrals
                         </a>
                     </div>
                 <?php endif; ?>
@@ -263,8 +259,8 @@ if ($adviser_info) {
                         <div class="stat-label">Pending Referrals</div>
                     </div>
                     <div class="stat-card">
-                        <div class="stat-number"><?= $stats['referred_complaints'] ?></div>
-                        <div class="stat-label">Referred Complaints</div>
+                        <div class="stat-number"><?= $stats['completed_referrals'] ?></div>
+                        <div class="stat-label">Completed</div>
                     </div>
                 </div>
             </div>
@@ -285,12 +281,6 @@ if ($adviser_info) {
                     this.classList.add('active');
                 });
             });
-            
-            // Auto-refresh dashboard every 60 seconds
-            setInterval(() => {
-                // You can implement AJAX refresh here if needed
-                // location.reload(); // Simple refresh
-            }, 60000);
         });
     </script>
 </body>

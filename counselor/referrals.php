@@ -44,7 +44,7 @@ if ($filter_priority !== 'all') {
 }
 
 if (!empty($search)) {
-    $where_clauses[] = "(s.first_name LIKE ? OR s.last_name LIKE ? OR c.complaint_code LIKE ? OR r.referral_reason LIKE ?)";
+    $where_clauses[] = "(s.first_name LIKE ? OR s.last_name LIKE ? OR r.referral_reason LIKE ? OR r.issue_description LIKE ?)";
     $search_term = "%{$search}%";
     $params[] = $search_term;
     $params[] = $search_term;
@@ -75,18 +75,18 @@ if ($count_stmt) {
     error_log("Count prepare failed: " . $conn->error);
 }
 
-// Get referrals with filters - SIMPLIFIED and CORRECTED
+// Get referrals with filters - UPDATED for direct referral system
 $sql = "
     SELECT 
         r.id, 
+        r.category,
+        r.issue_description,
         r.referral_reason, 
         r.priority, 
         r.status, 
         r.created_at,
         r.adviser_id,
-        c.complaint_code, 
-        c.content as complaint_content,
-        c.urgency_level,
+        r.notes,
         s.first_name, 
         s.last_name, 
         s.grade_level,
@@ -96,8 +96,7 @@ $sql = "
         u.username as adviser_username,
         (SELECT COUNT(*) FROM appointments app WHERE app.referral_id = r.id) as appointment_count
     FROM referrals r
-    JOIN complaints c ON r.complaint_id = c.id
-    JOIN students s ON c.student_id = s.id
+    JOIN students s ON r.student_id = s.id
     JOIN sections sec ON s.section_id = sec.id
     JOIN users u ON r.adviser_id = u.id
     $where_sql
@@ -284,75 +283,77 @@ if ($critical_stmt = $conn->prepare($critical_sql)) {
       <?php elseif ($result && $result->num_rows > 0): ?>
         <table>
           <thead>
-            <tr>
-              <th>Complaint Code</th>
-              <th>Student</th>
-              <th>Level</th>
-              <th>Adviser</th>
-              <th>Reason</th>
-              <th>Priority</th>
-              <th>Status</th>
-              <th>Actions</th>
-            </tr>
-          </thead>
+    <tr>
+        <th>Category</th>  
+        <th>Student</th>
+        <th>Level</th>
+        <th>Adviser</th>
+        <th>Issue Description</th>   
+        <th>Priority</th>
+        <th>Status</th>
+        <th>Actions</th>
+    </tr>
+</thead>
           <tbody>
-            <?php while($row = $result->fetch_assoc()): 
-              $priority_class = 'priority-' . strtolower($row['priority']);
-              $status_class = 'status-' . strtolower($row['status']);
-              $level_class = 'level-' . strtolower($row['section_level']);
-            ?>
-              <tr>
-                <td>
-                  <strong><?= htmlspecialchars($row['complaint_code']); ?></strong>
-                  <div class="complaint-preview" title="<?= htmlspecialchars($row['complaint_content']) ?>">
-                    <?= htmlspecialchars(substr($row['complaint_content'], 0, 50)) . (strlen($row['complaint_content']) > 50 ? '...' : '') ?>
-                  </div>
-                </td>
-                <td>
-                  <strong><?= htmlspecialchars($row['first_name'].' '.$row['last_name']); ?></strong><br>
-                  <small style="color: var(--clr-muted);">Grade <?= htmlspecialchars($row['grade_level']); ?></small>
-                </td>
-                <td>
-                  <span class="badge level-badge <?= $level_class; ?>">
-                    <?= ucfirst($row['section_level']); ?>
-                  </span>
-                </td>
-                <td><?= htmlspecialchars($row['adviser_name']); ?></td>
-                <td>
-                  <?= htmlspecialchars($row['referral_reason']); ?><br>
-                  <small style="color: var(--clr-muted);">Urgency: <?= ucfirst($row['urgency_level']); ?></small>
-                </td>
-                <td>
-                  <span class="badge <?= $priority_class; ?>">
-                    <i class="fas fa-flag"></i> <?= ucfirst($row['priority']); ?>
-                  </span>
-                </td>
-                <td>
-                  <span class="badge <?= $status_class; ?>">
-                    <i class="fas fa-circle-notch"></i> <?= ucfirst($row['status']); ?>
-                  </span>
-                  <?php if ($row['appointment_count'] > 0): ?>
-                    <br><small style="color: var(--clr-muted);"><?= $row['appointment_count']; ?> appt(s)</small>
-                  <?php endif; ?>
-                </td>
-                <td>
-                  <div class="action-buttons">
-                    <?php if ($row['status'] !== 'closed'): ?>
-                      <a href="create_appointment.php?referral_id=<?= $row['id']; ?>" class="btn-action btn-primary">
+           <?php while($row = $result->fetch_assoc()): 
+    $priority_class = 'priority-' . strtolower($row['priority']);
+    $status_class = 'status-' . strtolower($row['status']);
+    $level_class = 'level-' . strtolower($row['section_level']);
+?>
+    <tr>
+        <td>
+            <span class="badge category-badge">
+                <?= ucfirst($row['category']); ?>
+            </span>
+            <div class="issue-preview" title="<?= htmlspecialchars($row['issue_description']) ?>">
+                <?= htmlspecialchars(substr($row['issue_description'], 0, 50)) . (strlen($row['issue_description']) > 50 ? '...' : '') ?>
+            </div>
+        </td>
+        <td>
+            <strong><?= htmlspecialchars($row['first_name'].' '.$row['last_name']); ?></strong><br>
+            <small style="color: var(--clr-muted);">Grade <?= htmlspecialchars($row['grade_level']); ?></small>
+        </td>
+        <td>
+            <span class="badge level-badge <?= $level_class; ?>">
+                <?= ucfirst($row['section_level']); ?>
+            </span>
+        </td>
+        <td><?= htmlspecialchars($row['adviser_name']); ?></td>
+        <td>
+            <?= htmlspecialchars($row['issue_description']); ?><br>
+            <small style="color: var(--clr-muted);">Reason: <?= htmlspecialchars($row['referral_reason']); ?></small>
+        </td>
+        <td>
+            <span class="badge <?= $priority_class; ?>">
+                <i class="fas fa-flag"></i> <?= ucfirst($row['priority']); ?>
+            </span>
+        </td>
+        <td>
+            <span class="badge <?= $status_class; ?>">
+                <i class="fas fa-circle-notch"></i> <?= ucfirst($row['status']); ?>
+            </span>
+            <?php if ($row['appointment_count'] > 0): ?>
+                <br><small style="color: var(--clr-muted);"><?= $row['appointment_count']; ?> appt(s)</small>
+            <?php endif; ?>
+        </td>
+        <td>
+            <div class="action-buttons">
+                <?php if ($row['status'] !== 'closed' && $row['status'] !== 'completed'): ?>
+                    <a href="create_appointment.php?referral_id=<?= $row['id']; ?>" class="btn-action btn-primary">
                         <i class="fas fa-calendar-plus"></i> Book Session
-                      </a>
-                    <?php else: ?>
-                      <span class="btn-action btn-disabled">
-                        <i class="fas fa-lock"></i> Closed
-                      </span>
-                    <?php endif; ?>
-                    <a href="referral_details.php?id=<?= $row['id']; ?>" class="btn-action btn-secondary">
-                      <i class="fas fa-eye"></i> View Details
                     </a>
-                  </div>
-                </td>
-              </tr>
-            <?php endwhile; ?>
+                <?php else: ?>
+                    <span class="btn-action btn-disabled">
+                        <i class="fas fa-lock"></i> <?= ucfirst($row['status']); ?>
+                    </span>
+                <?php endif; ?>
+                <a href="referral_details.php?id=<?= $row['id']; ?>" class="btn-action btn-secondary">
+                    <i class="fas fa-eye"></i> View Details
+                </a>
+            </div>
+        </td>
+    </tr>
+<?php endwhile; ?>
           </tbody>
         </table>
       <?php else: ?>
