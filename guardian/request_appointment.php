@@ -41,10 +41,12 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['student_id'])) {
         $message = 'End time must be after start time.';
         $message_type = 'error';
     } else {
-        $stmt = $conn->prepare("INSERT INTO appointments (appointment_code, requested_by_user_id, student_id, start_time, end_time, mode, notes, reason, status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'requested', NOW())");
-        
-        if ($stmt) {
-            $stmt->bind_param("siisssss", $code, $user_id, $student_id, $start, $end, $mode, $notes, $reason);
+       $stmt = $conn->prepare("INSERT INTO appointments (
+    appointment_code, student_id, start_time, end_time, mode, notes, status, created_by, created_at
+) VALUES (?, ?, ?, ?, ?, ?, 'scheduled', ?, NOW())");
+
+if ($stmt) {
+    $stmt->bind_param("sissssi", $code, $student_id, $start, $end, $mode, $notes, $user_id);
             
             if ($stmt->execute()) {
                 $appointment_id = $stmt->insert_id;

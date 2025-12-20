@@ -5,6 +5,28 @@ checkRole(['counselor']);
 
 $user_id = $_SESSION['user_id'];
 
+// Count guardian appointment requests (unassigned appointments)
+function countGuardianRequests($conn, $counselor_id) {
+    $sql = "
+        SELECT COUNT(*) as request_count 
+        FROM appointments a
+        JOIN users u ON a.created_by = u.id
+        WHERE a.counselor_id IS NULL 
+        AND u.role = 'guardian'
+        AND a.status = 'scheduled'
+    ";
+    
+    $stmt = $conn->prepare($sql);
+    $stmt->execute();
+    $result = $stmt->get_result();
+    $row = $result->fetch_assoc();
+    
+    return $row['request_count'] ?? 0;
+}
+
+// Get count for current counselor
+$guardian_request_count = countGuardianRequests($conn, $user_id);
+
 // Fetch counselor info
 $stmt = $conn->prepare("SELECT * FROM users WHERE id = ?");
 $stmt->bind_param("i", $user_id);
@@ -199,6 +221,10 @@ if (isset($_GET['get_calendar_events'])) {
             <span class="icon"><i class="fas fa-calendar-alt"></i></span>
             <span class="label">Appointments</span>
         </a>
+       <a href="guardian_requests.php" class="nav-link">
+            <span class="icon"><i class="fas fa-paper-plane"></i></span>
+            <span class="label">Appointment Requests</span>
+        </a>
         <a href="sessions.php" class="nav-link">
             <span class="icon"><i class="fas fa-comments"></i></span>
             <span class="label">Sessions</span>
@@ -209,8 +235,8 @@ if (isset($_GET['get_calendar_events'])) {
         </a> -->
         
         <a href="../auth/logout.php" class="logout-link">
-            <i class="fas fa-sign-out-alt"></i> Logout
-        </a>
+      <i class="fas fa-sign-out-alt"></i> Logout
+    </a>
     </nav>
 
     <!-- Main Content -->
@@ -245,7 +271,7 @@ if (isset($_GET['get_calendar_events'])) {
                     <i class="fas fa-calendar-alt"></i> Calendar View
                 </button>
             </div>
-
+                
             <!-- Calendar View -->
             <div class="calendar-container" id="calendarContainer">
                 <div id="calendar"></div>

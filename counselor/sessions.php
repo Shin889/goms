@@ -173,6 +173,10 @@ $students_stmt->close();
     <a href="appointments.php" class="nav-link">
       <span class="icon"><i class="fas fa-calendar-alt"></i></span><span class="label">Appointments</span>
     </a>
+     <a href="guardian_requests.php" class="nav-link">
+            <span class="icon"><i class="fas fa-paper-plane"></i></span>
+            <span class="label">Appointment Requests</span>
+        </a>
     <a href="sessions.php" class="nav-link active">
       <span class="icon"><i class="fas fa-comments"></i></span><span class="label">Sessions</span>
     </a>
