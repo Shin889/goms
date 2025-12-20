@@ -11,10 +11,13 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     $role = $_POST['role'];
     $full_name = trim($_POST['full_name']);
     $phone = trim($_POST['phone']);
+    $level = isset($_POST['level']) ? trim($_POST['level']) : null;
     
     // Basic validation
     if (empty($username) || empty($password) || empty($role) || empty($full_name)) {
         $error_message = "Please fill in all required fields.";
+    } elseif ($role === 'counselor' && empty($level)) {
+        $error_message = "Please select counselor level (Junior or Senior).";
     } elseif (strlen($password) < 6) {
         $error_message = "Password must be at least 6 characters long.";
     } else {
@@ -54,28 +57,62 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             if (empty($error_message)) {
                 $hashed_password = password_hash($password, PASSWORD_DEFAULT);
                 
-                // Insert user with default inactive/unapproved status
-                $stmt = $conn->prepare("
-                    INSERT INTO users 
-                    (username, email, password, role, full_name, phone, is_active, is_approved) 
-                    VALUES (?, ?, ?, ?, ?, ?, 0, 0)
-                ");
-                $stmt->bind_param("ssssss", $username, $email, $hashed_password, $role, $full_name, $phone);
-
-                if ($stmt->execute()) {
+                // Start transaction
+                $conn->begin_transaction();
+                
+                try {
+                    // Insert user with default inactive/unapproved status
+                    $stmt = $conn->prepare("
+                        INSERT INTO users 
+                        (username, email, password, role, full_name, phone, is_active, is_approved) 
+                        VALUES (?, ?, ?, ?, ?, ?, 0, 0)
+                    ");
+                    $stmt->bind_param("ssssss", $username, $email, $hashed_password, $role, $full_name, $phone);
+                    
+                    if (!$stmt->execute()) {
+                        throw new Exception("User registration error: " . $stmt->error);
+                    }
+                    
                     $user_id = $stmt->insert_id;
+                    
+                    // If user is counselor, insert into counselors table with level
+                    if ($role === 'counselor') {
+                        // Determine specialty based on level
+                        $specialty = $level === 'Senior' ? 'Senior High Counseling' : 'Junior High Counseling';
+                        
+                        $stmt2 = $conn->prepare("
+                            INSERT INTO counselors 
+                            (user_id, specialty, license_number, years_of_experience, max_caseload) 
+                            VALUES (?, ?, NULL, NULL, 30)
+                        ");
+                        $stmt2->bind_param("is", $user_id, $specialty);
+                        
+                        if (!$stmt2->execute()) {
+                            throw new Exception("Counselor profile creation error: " . $stmt2->error);
+                        }
+                        $stmt2->close();
+                    }
                     
                     // Log registration action
                     include('../includes/functions.php');
-                    logAction($user_id, 'REGISTER', "User registered as {$role}", 'users', $user_id);
+                    $log_summary = $role === 'counselor' 
+                        ? "User registered as {$role} ({$level})" 
+                        : "User registered as {$role}";
+                    logAction($user_id, 'REGISTER', $log_summary, 'users', $user_id);
+                    
+                    // Commit transaction
+                    $conn->commit();
                     
                     $success_message = 'Registration successful! Please wait for admin approval. You will receive a notification once your account is approved.';
-                } else {
-                    $error_message = "Registration error: " . $stmt->error;
+                    
+                } catch (Exception $e) {
+                    // Rollback transaction on error
+                    $conn->rollback();
+                    $error_message = $e->getMessage();
                 }
             }
         }
-        $stmt->close();
+        if (isset($stmt)) $stmt->close();
     }
 }
 ?>
@@ -87,8 +124,25 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Register | GOMS</title>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="stylesheet" href="../utils/css/root.css"> 
     <link rel="stylesheet" href="../utils/css/register.css"> 
+    <style>
+        .level-select-wrapper {
+            display: none;
+            margin-bottom: 15px;
+        }
+        
+        .level-select-wrapper.visible {
+            display: block;
+            animation: fadeIn 0.3s ease-in;
+        }
+        
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(-10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+    </style>
 </head>
 <body>
     <div class="register-container">
@@ -110,7 +164,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             </div>
         <?php endif; ?>
 
-        <form method="POST" action="">
+        <form method="POST" action="" id="registerForm">
             <input type="text" name="full_name" placeholder="Full Name *" required autocomplete="name">
             <input type="text" name="username" placeholder="Username *" required autocomplete="username">
             <input type="email" name="email" placeholder="Email (optional)" autocomplete="email">
@@ -118,11 +172,19 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             <input type="password" name="password" placeholder="Password (min. 6 characters) *" required autocomplete="new-password" minlength="6">
             
             <div class="select-wrapper">
-                <select name="role" required>
+                <select name="role" id="roleSelect" required>
                     <option value="" disabled selected>Select Role *</option>
                     <option value="guardian">Guardian</option>
                     <option value="adviser">Adviser (Teacher)</option>
                     <option value="counselor">Counselor</option>
+                </select>
+            </div>
+
+            <div class="select-wrapper level-select-wrapper" id="levelSelectWrapper">
+                <select name="level" id="levelSelect">
+                    <option value="" disabled selected>Select Counselor Level *</option>
+                    <option value="Junior">Junior High Counselor</option>
+                    <option value="Senior">Senior High Counselor</option>
                 </select>
             </div>
 
@@ -135,5 +197,41 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             <i class="fas fa-arrow-left"></i> Back to Login
         </a>
     </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const roleSelect = document.getElementById('roleSelect');
+            const levelSelectWrapper = document.getElementById('levelSelectWrapper');
+            const levelSelect = document.getElementById('levelSelect');
+            
+            // Function to toggle level dropdown
+            function toggleLevelDropdown() {
+                if (roleSelect.value === 'counselor') {
+                    levelSelectWrapper.classList.add('visible');
+                    levelSelect.required = true;
+                } else {
+                    levelSelectWrapper.classList.remove('visible');
+                    levelSelect.required = false;
+                    levelSelect.value = '';
+                }
+            }
+            
+            // Initial check
+            toggleLevelDropdown();
+            
+            // Add event listener for role change
+            roleSelect.addEventListener('change', toggleLevelDropdown);
+            
+            // Form validation
+            const form = document.getElementById('registerForm');
+            form.addEventListener('submit', function(event) {
+                if (roleSelect.value === 'counselor' && levelSelect.value === '') {
+                    event.preventDefault();
+                    alert('Please select counselor level (Junior or Senior).');
+                    levelSelect.focus();
+                }
+            });
+        });
+    </script>
 </body>
 </html>
