@@ -15,30 +15,61 @@ if ($referral_id <= 0) {
     exit;
 }
 
-// Get counselor info
-$stmt = $conn->prepare("SELECT username, full_name FROM users WHERE id = ?");
+// Get counselor info from counselors table
+$stmt = $conn->prepare("
+    SELECT c.id as counselor_db_id, u.full_name 
+    FROM counselors c 
+    JOIN users u ON c.user_id = u.id 
+    WHERE u.id = ?
+");
+if (!$stmt) {
+    die("Database error: " . $conn->error);
+}
 $stmt->bind_param("i", $counselor_id);
 $stmt->execute();
 $result = $stmt->get_result();
 $counselor = $result->fetch_assoc();
 $stmt->close();
 
-// Get student info from referral
+if (!$counselor) {
+    $_SESSION['error'] = "Counselor information not found.";
+    header("Location: referrals.php");
+    exit;
+}
+
+// Get referral and student info - CORRECTED QUERY
 $stmt = $conn->prepare("
-    SELECT c.student_id, s.first_name, s.last_name, s.student_id as student_number
+    SELECT 
+        r.id as referral_id,
+        r.student_id,
+        r.category,
+        r.issue_description,
+        r.priority,
+        r.status,
+        s.first_name,
+        s.last_name,
+        s.student_id as student_number,
+        s.grade_level,
+        s.section_id,
+        sec.section_name,
+        u.full_name as adviser_name
     FROM referrals r
-    JOIN complaints c ON r.complaint_id = c.id
-    JOIN students s ON c.student_id = s.id
-    WHERE r.id = ?
+    JOIN students s ON r.student_id = s.id
+    LEFT JOIN sections sec ON s.section_id = sec.id
+    JOIN users u ON r.adviser_id = u.id
+    WHERE r.id = ? AND r.counselor_id = ?
 ");
-$stmt->bind_param("i", $referral_id);
+if (!$stmt) {
+    die("Database error: " . $conn->error);
+}
+$stmt->bind_param("ii", $referral_id, $counselor['counselor_db_id']);
 $stmt->execute();
 $ref_result = $stmt->get_result();
 $ref = $ref_result->fetch_assoc();
 $stmt->close();
 
 if (!$ref) {
-    $_SESSION['error'] = "Referral not found.";
+    $_SESSION['error'] = "Referral not found or you don't have permission to access it.";
     header("Location: referrals.php");
     exit;
 }
@@ -61,107 +92,142 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         $location = 'Counseling Room A';
     } elseif ($mode === 'online') {
         $location = 'Online Meeting';
-        $meeting_link = 'https://meet.generic.edu/session-' . rand(10000, 99999);
+        $meeting_link = 'https://meet.example.com/session-' . rand(10000, 99999);
     } elseif ($mode === 'phone') {
         $location = 'Phone Consultation';
     }
     
     $status = 'scheduled'; // Default status
     
-    // Debug: Check connection
-    if ($conn->connect_error) {
-        die("Database connection failed: " . $conn->connect_error);
-    }
+    // Check for time conflicts
+    $conflict_stmt = $conn->prepare("
+        SELECT id 
+        FROM appointments 
+        WHERE counselor_id = ? 
+        AND ((start_time < ? AND end_time > ?) 
+             OR (start_time >= ? AND start_time < ?))
+        AND status NOT IN ('cancelled', 'completed')
+    ");
     
-    // EXACT INSERT statement matching your table structure
-    $sql = "INSERT INTO appointments (
-                appointment_code, 
-                student_id, 
-                counselor_id, 
-                referral_id,
-                start_time, 
-                end_time, 
-                mode,
-                status,
-                location,
-                meeting_link,
-                notes,
-                created_by
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
-    
-    // Debug: Show the SQL
-    // echo "<pre>SQL: " . htmlspecialchars($sql) . "</pre>";
-    
-    $stmt = $conn->prepare($sql);
-    
-    if (!$stmt) {
-        // Show more detailed error
-        $error_msg = "Prepare failed: " . htmlspecialchars($conn->error);
-        error_log($error_msg);
-        die($error_msg . "<br>Check that all column names match your table structure.");
-    }
-    
-    // Debug: check all values
-    error_log("Appointment values: code=$appointment_code, student=$student_id, counselor=$counselor_id, referral=$referral_id, start=$start, end=$end, mode=$mode, status=$status, location=$location, meeting=$meeting_link, notes=$notes, created=$counselor_id");
-    
-    // Bind parameters - 12 parameters total
-    $stmt->bind_param(
-        "siiisssssssi", // 12 characters for 12 parameters
-        $appointment_code,     // s
-        $student_id,           // i
-        $counselor_id,         // i
-        $referral_id,          // i
-        $start,                // s
-        $end,                  // s
-        $mode,                 // s
-        $status,               // s (status)
-        $location,             // s
-        $meeting_link,         // s
-        $notes,                // s
-        $counselor_id          // i (created_by)
-    );
-    
-    if ($stmt->execute()) {
-        $appointment_id = $stmt->insert_id;
+    if ($conflict_stmt) {
+        $conflict_stmt->bind_param("issss", 
+            $counselor['counselor_db_id'], 
+            $end, 
+            $start,
+            $start,
+            $end
+        );
+        $conflict_stmt->execute();
+        $conflict_result = $conflict_stmt->get_result();
         
-        // Log the action
-        logAction($counselor_id, 'Create Appointment', 'appointments', $appointment_id, "From referral #$referral_id");
-        
-        // Update referral status
-        $update_stmt = $conn->prepare("UPDATE referrals SET status = 'scheduled' WHERE id = ?");
-        $update_stmt->bind_param("i", $referral_id);
-        $update_stmt->execute();
-        $update_stmt->close();
-        
-        // Send SMS to guardian
-        $guardian_stmt = $conn->prepare("
-            SELECT g.phone 
-            FROM student_guardians sg 
-            JOIN guardians g ON sg.guardian_id = g.id 
-            WHERE sg.student_id = ? AND sg.primary_guardian = 1
-            LIMIT 1
-        ");
-        $guardian_stmt->bind_param("i", $student_id);
-        $guardian_stmt->execute();
-        $guardian_result = $guardian_stmt->get_result();
-        $guardian = $guardian_result->fetch_assoc();
-        $guardian_stmt->close();
-        
-        if ($guardian && !empty($guardian['phone'])) {
-            $formatted_date = date("F j, Y \a\\t g:i A", strtotime($start));
-            $msg = "GOMS: Your child " . $ref['first_name'] . " has a counseling appointment scheduled on $formatted_date. Mode: $mode.";
-            sendSMS($counselor_id, $guardian['phone'], $msg);
+        if ($conflict_result->num_rows > 0) {
+            $error = 'Time conflict: You already have an appointment scheduled during this time.';
+        } else {
+            // Create appointment - UPDATED TO MATCH YOUR SCHEMA
+            $sql = "INSERT INTO appointments (
+                        appointment_code, 
+                        student_id, 
+                        counselor_id, 
+                        referral_id,
+                        start_time, 
+                        end_time, 
+                        mode,
+                        status,
+                        location,
+                        meeting_link,
+                        notes,
+                        created_at,
+                        created_by
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), ?)";
+            
+            $stmt = $conn->prepare($sql);
+            
+            if (!$stmt) {
+                $error = "Prepare failed: " . htmlspecialchars($conn->error);
+                error_log($error);
+            } else {
+                // Bind parameters
+                $stmt->bind_param(
+                    "siiisssssssi", // 13 characters for 13 parameters
+                    $appointment_code,
+                    $student_id,
+                    $counselor['counselor_db_id'],
+                    $referral_id,
+                    $start,
+                    $end,
+                    $mode,
+                    $status,
+                    $location,
+                    $meeting_link,
+                    $notes,
+                    $counselor_id
+                );
+                
+                if ($stmt->execute()) {
+                    $appointment_id = $conn->insert_id;
+                    
+                    // Log the action
+                    logAction($counselor_id, 'Create Appointment', 'appointments', $appointment_id, "From referral #$referral_id");
+                    
+                    // Update referral status
+                    $update_stmt = $conn->prepare("UPDATE referrals SET status = 'scheduled', updated_at = NOW() WHERE id = ?");
+                    $update_stmt->bind_param("i", $referral_id);
+                    $update_stmt->execute();
+                    $update_stmt->close();
+                    
+                    // Check if guardian table exists before trying to send SMS
+                    // First, let's check if the student_guardians table exists
+                    $check_table = $conn->query("SHOW TABLES LIKE 'student_guardians'");
+                    
+                    if ($check_table && $check_table->num_rows > 0) {
+                        // Table exists, try to get guardian info
+                        $guardian_stmt = $conn->prepare("
+                            SELECT g.phone 
+                            FROM student_guardians sg 
+                            JOIN guardians g ON sg.guardian_id = g.id 
+                            WHERE sg.student_id = ? AND sg.primary_guardian = 1
+                            LIMIT 1
+                        ");
+                        
+                        if ($guardian_stmt) {
+                            $guardian_stmt->bind_param("i", $student_id);
+                            $guardian_stmt->execute();
+                            $guardian_result = $guardian_stmt->get_result();
+                            $guardian = $guardian_result->fetch_assoc();
+                            $guardian_stmt->close();
+                            
+                            if ($guardian && !empty($guardian['phone'])) {
+                                $formatted_date = date("F j, Y \a\\t g:i A", strtotime($start));
+                                $msg = "GOMS: Your child " . $ref['first_name'] . " " . $ref['last_name'] . " has a counseling appointment scheduled on $formatted_date. Mode: $mode.";
+                                
+                                // Check if sendSMS function exists
+                                if (function_exists('sendSMS')) {
+                                    sendSMS($counselor_id, $guardian['phone'], $msg);
+                                } else {
+                                    error_log("sendSMS function not found");
+                                }
+                            }
+                        } else {
+                            error_log("Failed to prepare guardian statement: " . $conn->error);
+                        }
+                    } else {
+                        error_log("student_guardians table does not exist");
+                    }
+                    
+                    $_SESSION['success'] = "Appointment created successfully!";
+                    header("Location: appointments.php");
+                    exit;
+                } else {
+                    $error = "Error creating appointment: " . $stmt->error;
+                    error_log("Execute error: " . $stmt->error);
+                }
+                $stmt->close();
+            }
         }
-        
-        $_SESSION['success'] = "Appointment created successfully!";
-        header("Location: appointments.php");
-        exit;
+        $conflict_stmt->close();
     } else {
-        $error = "Error creating appointment: " . $stmt->error;
-        error_log("Execute error: " . $stmt->error);
+        $error = "Database error checking conflicts: " . $conn->error;
     }
-    
-    $stmt->close();
 }
 ?>
 
@@ -182,7 +248,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         <button id="sidebarToggle" class="toggle-btn">☰</button>
         <h2 class="logo">GOMS Counselor</h2>
         <div class="sidebar-user">
-            Counselor · <?= htmlspecialchars($counselor['full_name'] ?? $counselor['username']); ?>
+            Counselor · <?= htmlspecialchars($counselor['full_name'] ?? 'User'); ?>
         </div>
         <a href="dashboard.php" class="nav-link">
             <span class="icon"><i class="fas fa-home"></i></span><span class="label">Dashboard</span>
@@ -220,53 +286,103 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             </div>
         <?php endif; ?>
 
-        <div class="card">
-            <div class="student-info">
-                <div class="label">Referred Student</div>
-                <div class="value"><?= htmlspecialchars($ref['first_name'] . ' ' . $ref['last_name']); ?></div>
-                <div style="font-size: 0.9rem; color: var(--clr-muted); margin-top: 4px;">
-                    Student ID: <?= htmlspecialchars($ref['student_number'] ?? 'N/A'); ?>
-                </div>
-            </div>
-
-            <form method="POST" action="">
-                <div class="form-body">
-                    <div class="form-row two-col">
-                        <div class="form-group">
-                            <label>Start Time</label>
-                            <input type="datetime-local" name="start_time" required 
-                                   value="<?= date('Y-m-d\TH:i', strtotime('+1 hour')) ?>">
+        <?php if (isset($ref)): ?>
+            <div class="card">
+                <!-- Student Information -->
+                <div class="referral-info">
+                    <h3><i class="fas fa-user-graduate"></i> Student Information</h3>
+                    <div class="info-grid">
+                        <div class="info-item">
+                            <label>Student Name:</label>
+                            <strong><?= htmlspecialchars($ref['first_name'] . ' ' . $ref['last_name']); ?></strong>
                         </div>
-        
-                        <div class="form-group">
-                            <label>End Time</label>
-                            <input type="datetime-local" name="end_time" required 
-                                   value="<?= date('Y-m-d\TH:i', strtotime('+2 hours')) ?>">
+                        <div class="info-item">
+                            <label>Student ID:</label>
+                            <?= htmlspecialchars($ref['student_number'] ?? 'N/A'); ?>
+                        </div>
+                        <div class="info-item">
+                            <label>Grade Level:</label>
+                            Grade <?= htmlspecialchars($ref['grade_level']); ?>
+                        </div>
+                        <div class="info-item">
+                            <label>Section:</label>
+                            <?= htmlspecialchars($ref['section_name'] ?? 'Not assigned'); ?>
+                        </div>
+                        <div class="info-item">
+                            <label>Adviser:</label>
+                            <?= htmlspecialchars($ref['adviser_name']); ?>
+                        </div>
+                        <div class="info-item">
+                            <label>Category:</label>
+                            <span class="badge"><?= ucfirst($ref['category']); ?></span>
+                        </div>
+                        <div class="info-item">
+                            <label>Priority:</label>
+                            <span class="badge priority-<?= $ref['priority']; ?>">
+                                <?= ucfirst($ref['priority']); ?>
+                            </span>
                         </div>
                     </div>
                     
-                    <div class="form-row">
-                        <div class="form-group">
-                            <label>Mode</label>
-                            <select name="mode" required>
-                                <option value="in-person" selected>In-person</option>
-                                <option value="online">Online</option>
-                                <option value="phone">Phone</option>
-                            </select>
-                        </div>
-                    </div>
-
-                    <div class="form-group">
-                        <label>Notes</label>
-                        <textarea name="notes" placeholder="Add any additional notes or instructions, purpose of session, or location details..."></textarea>
+                    <div class="issue-summary">
+                        <label>Issue Description:</label>
+                        <p><?= htmlspecialchars($ref['issue_description']); ?></p>
                     </div>
                 </div>
 
-                <button type="submit" class="btn-submit">
-                    <i class="fas fa-calendar-check"></i> Confirm Appointment
-                </button>
-            </form>
-        </div>
+                <form method="POST" action="">
+                    <div class="form-body">
+                        <h3><i class="fas fa-calendar-plus"></i> Appointment Details</h3>
+                        
+                        <div class="form-row two-col">
+                            <div class="form-group">
+                                <label>Start Date & Time</label>
+                                <input type="datetime-local" name="start_time" required 
+                                       value="<?= date('Y-m-d\TH:i', strtotime('+1 hour')) ?>"
+                                       min="<?= date('Y-m-d\TH:i') ?>">
+                            </div>
+            
+                            <div class="form-group">
+                                <label>End Date & Time</label>
+                                <input type="datetime-local" name="end_time" required 
+                                       value="<?= date('Y-m-d\TH:i', strtotime('+2 hours')) ?>"
+                                       min="<?= date('Y-m-d\TH:i') ?>">
+                            </div>
+                        </div>
+                        
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>Appointment Mode</label>
+                                <select name="mode" required>
+                                    <option value="in-person" selected>In-person</option>
+                                    <option value="online">Online</option>
+                                    <option value="phone">Phone</option>
+                                </select>
+                                <small class="form-help">
+                                    • In-person: Counseling Room A<br>
+                                    • Online: Meeting link will be generated<br>
+                                    • Phone: Counselor will call the provided number
+                                </small>
+                            </div>
+                        </div>
+
+                        <div class="form-group">
+                            <label>Additional Notes</label>
+                            <textarea name="notes" placeholder="Add any additional notes, specific concerns to address, or special instructions..."></textarea>
+                        </div>
+                    </div>
+
+                    <div class="form-actions">
+                        <a href="referrals.php" class="btn-cancel">
+                            <i class="fas fa-times"></i> Cancel
+                        </a>
+                        <button type="submit" class="btn-submit">
+                            <i class="fas fa-calendar-check"></i> Schedule Appointment
+                        </button>
+                    </div>
+                </form>
+            </div>
+        <?php endif; ?>
     </div>
 
     <script src="../utils/js/sidebar.js"></script>
@@ -294,16 +410,21 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             // Set minimum datetime to current time
             const now = new Date();
             const minDateTime = now.toISOString().slice(0, 16);
-            document.querySelector('input[name="start_time"]').min = minDateTime;
-            document.querySelector('input[name="end_time"]').min = minDateTime;
+            const startInput = document.querySelector('input[name="start_time"]');
+            const endInput = document.querySelector('input[name="end_time"]');
+            
+            if (startInput) startInput.min = minDateTime;
+            if (endInput) endInput.min = minDateTime;
             
             // Auto-adjust end time when start time changes
-            document.querySelector('input[name="start_time"]').addEventListener('change', function() {
-                const start = new Date(this.value);
-                const end = new Date(start.getTime() + 60 * 60 * 1000); // +1 hour
-                document.querySelector('input[name="end_time"]').value = end.toISOString().slice(0, 16);
-                document.querySelector('input[name="end_time"]').min = this.value;
-            });
+            if (startInput && endInput) {
+                startInput.addEventListener('change', function() {
+                    const start = new Date(this.value);
+                    const end = new Date(start.getTime() + 60 * 60 * 1000); // +1 hour
+                    endInput.value = end.toISOString().slice(0, 16);
+                    endInput.min = this.value;
+                });
+            }
         });
     </script>
 </body>

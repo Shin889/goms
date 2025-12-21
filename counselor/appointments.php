@@ -99,6 +99,14 @@ if (isset($_POST['create_appointment'])) {
     exit();
 }
 
+// Get counselor's database ID from counselors table
+$stmt = $conn->prepare("SELECT id FROM counselors WHERE user_id = ?");
+$stmt->bind_param("i", $user_id);
+$stmt->execute();
+$counselor_result = $stmt->get_result()->fetch_assoc();
+$counselor_db_id = $counselor_result['id'];
+$stmt->close();
+
 // Fetch all appointments assigned to this counselor
 $sql = "
 SELECT 
@@ -125,7 +133,7 @@ $stmt = $conn->prepare($sql);
 if (!$stmt) {
     die("SQL Error: " . $conn->error . "<br>Query: " . htmlspecialchars($sql));
 }
-$stmt->bind_param("i", $user_id);
+$stmt->bind_param("i", $counselor_db_id); // Use counselor_db_id instead of user_id
 $stmt->execute();
 $appointments_result = $stmt->get_result();
 

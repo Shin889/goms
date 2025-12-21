@@ -6,13 +6,21 @@ include('../includes/functions.php');
 
 $counselor_id = intval($_SESSION['user_id']);
 
-// Get counselor info for sidebar
-$stmt = $conn->prepare("SELECT username, full_name FROM users WHERE id = ?");
+// Get counselor info including handles_level
+$stmt = $conn->prepare("
+    SELECT u.username, u.full_name, c.handles_level, c.id as counselor_db_id
+    FROM users u
+    JOIN counselors c ON u.id = c.user_id
+    WHERE u.id = ?
+");
 $stmt->bind_param("i", $counselor_id);
 $stmt->execute();
 $result = $stmt->get_result();
 $counselor = $result->fetch_assoc();
 if ($stmt) $stmt->close();
+
+// Get counselor's level preference
+$counselor_level = $counselor['handles_level'] ?? 'Both'; // Junior, Senior, or Both
 
 // Filter parameters
 $filter_level = isset($_GET['level']) ? $_GET['level'] : 'all';
@@ -20,11 +28,21 @@ $filter_status = isset($_GET['status']) ? $_GET['status'] : 'all';
 $filter_priority = isset($_GET['priority']) ? $_GET['priority'] : 'all';
 $search = isset($_GET['search']) ? trim($_GET['search']) : '';
 
-// Build WHERE clauses
+// Build WHERE clauses - Start with counselor_id condition
 $where_clauses = ["r.counselor_id = ?"];
-$params = [$counselor_id];
+$params = [$counselor['counselor_db_id']]; // Use the counselor.id from counselors table
 $param_types = "i";
 
+// Add counselor level filter if not 'Both'
+if ($counselor_level !== 'Both') {
+    if ($counselor_level === 'Junior') {
+        $where_clauses[] = "s.grade_level BETWEEN 7 AND 10";
+    } else {
+        $where_clauses[] = "s.grade_level >= 11";
+    }
+}
+
+// Add additional filters from user input
 if ($filter_level !== 'all') {
     $where_clauses[] = "sec.level = ?";
     $params[] = $filter_level;
@@ -55,8 +73,11 @@ if (!empty($search)) {
 
 $where_sql = !empty($where_clauses) ? "WHERE " . implode(" AND ", $where_clauses) : "";
 
-// Get referral count for stats - SIMPLIFIED
-$count_sql = "SELECT COUNT(*) as total FROM referrals r $where_sql";
+// Get referral count for stats
+$count_sql = "SELECT COUNT(*) as total FROM referrals r 
+              JOIN students s ON r.student_id = s.id
+              JOIN sections sec ON s.section_id = sec.id
+              $where_sql";
 $count_stmt = $conn->prepare($count_sql);
 
 $total_count = 0;
@@ -75,7 +96,7 @@ if ($count_stmt) {
     error_log("Count prepare failed: " . $conn->error);
 }
 
-// Get referrals with filters - UPDATED for direct referral system
+// Main query to get referrals WITH appointment_id
 $sql = "
     SELECT 
         r.id, 
@@ -94,7 +115,12 @@ $sql = "
         sec.level as section_level,
         u.full_name AS adviser_name,
         u.username as adviser_username,
-        (SELECT COUNT(*) FROM appointments app WHERE app.referral_id = r.id) as appointment_count
+        (SELECT COUNT(*) FROM appointments app WHERE app.referral_id = r.id) as appointment_count,
+        (SELECT app.id FROM appointments app WHERE app.referral_id = r.id ORDER BY app.created_at DESC LIMIT 1) as appointment_id,
+        CASE 
+            WHEN s.grade_level BETWEEN 7 AND 10 THEN 'Junior'
+            ELSE 'Senior'
+        END as student_level
     FROM referrals r
     JOIN students s ON r.student_id = s.id
     JOIN sections sec ON s.section_id = sec.id
@@ -123,23 +149,41 @@ if ($stmt) {
     $error_message = "Database error. Please try again later.";
 }
 
-// Get stats for cards (simplified queries)
+// Get stats for cards
 $open_count = 0;
 $scheduled_count = 0;
 $critical_count = 0;
 
-$open_sql = "SELECT COUNT(*) as count FROM referrals WHERE counselor_id = ? AND status = 'open'";
+// For stats, use the same WHERE conditions but simplified
+$stats_where = "WHERE counselor_id = ?";
+$stats_params = [$counselor['counselor_db_id']];
+
+if ($counselor_level !== 'Both') {
+    // For stats, we need to join with students table to check grade level
+    $open_sql = "SELECT COUNT(*) as count FROM referrals r 
+                 JOIN students s ON r.student_id = s.id
+                 WHERE r.counselor_id = ? AND r.status = 'open'";
+    if ($counselor_level === 'Junior') {
+        $open_sql .= " AND s.grade_level BETWEEN 7 AND 10";
+    } else {
+        $open_sql .= " AND s.grade_level >= 11";
+    }
+} else {
+    $open_sql = "SELECT COUNT(*) as count FROM referrals WHERE counselor_id = ? AND status = 'open'";
+}
+
 if ($open_stmt = $conn->prepare($open_sql)) {
-    $open_stmt->bind_param("i", $counselor_id);
+    $open_stmt->bind_param("i", $counselor['counselor_db_id']);
     $open_stmt->execute();
     $open_result = $open_stmt->get_result();
     $open_count = $open_result->fetch_assoc()['count'] ?? 0;
     $open_stmt->close();
 }
 
+// Similar for other stats...
 $scheduled_sql = "SELECT COUNT(*) as count FROM referrals WHERE counselor_id = ? AND status = 'scheduled'";
 if ($scheduled_stmt = $conn->prepare($scheduled_sql)) {
-    $scheduled_stmt->bind_param("i", $counselor_id);
+    $scheduled_stmt->bind_param("i", $counselor['counselor_db_id']);
     $scheduled_stmt->execute();
     $scheduled_result = $scheduled_stmt->get_result();
     $scheduled_count = $scheduled_result->fetch_assoc()['count'] ?? 0;
@@ -148,7 +192,7 @@ if ($scheduled_stmt = $conn->prepare($scheduled_sql)) {
 
 $critical_sql = "SELECT COUNT(*) as count FROM referrals WHERE counselor_id = ? AND priority = 'critical'";
 if ($critical_stmt = $conn->prepare($critical_sql)) {
-    $critical_stmt->bind_param("i", $counselor_id);
+    $critical_stmt->bind_param("i", $counselor['counselor_db_id']);
     $critical_stmt->execute();
     $critical_result = $critical_stmt->get_result();
     $critical_count = $critical_result->fetch_assoc()['count'] ?? 0;
@@ -246,7 +290,8 @@ if ($critical_stmt = $conn->prepare($critical_sql)) {
               <option value="all" <?= $filter_status === 'all' ? 'selected' : '' ?>>All Status</option>
               <option value="open" <?= $filter_status === 'open' ? 'selected' : '' ?>>Open</option>
               <option value="scheduled" <?= $filter_status === 'scheduled' ? 'selected' : '' ?>>Scheduled</option>
-              <option value="closed" <?= $filter_status === 'closed' ? 'selected' : '' ?>>Closed</option>
+              <option value="completed" <?= $filter_status === 'completed' ? 'selected' : '' ?>>Completed</option>
+              <option value="in_session" <?= $filter_status === 'in_session' ? 'selected' : '' ?>>In Session</option>
             </select>
           </div>
           
@@ -283,77 +328,96 @@ if ($critical_stmt = $conn->prepare($critical_sql)) {
       <?php elseif ($result && $result->num_rows > 0): ?>
         <table>
           <thead>
-    <tr>
-        <th>Category</th>  
-        <th>Student</th>
-        <th>Level</th>
-        <th>Adviser</th>
-        <th>Issue Description</th>   
-        <th>Priority</th>
-        <th>Status</th>
-        <th>Actions</th>
-    </tr>
-</thead>
+            <tr>
+              <th>Category</th>  
+              <th>Student</th>
+              <th>Level</th>
+              <th>Adviser</th>
+              <th>Issue Description</th>   
+              <th>Priority</th>
+              <th>Status</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
           <tbody>
-           <?php while($row = $result->fetch_assoc()): 
-    $priority_class = 'priority-' . strtolower($row['priority']);
-    $status_class = 'status-' . strtolower($row['status']);
-    $level_class = 'level-' . strtolower($row['section_level']);
-?>
-    <tr>
-        <td>
-            <span class="badge category-badge">
-                <?= ucfirst($row['category']); ?>
-            </span>
-            <div class="issue-preview" title="<?= htmlspecialchars($row['issue_description']) ?>">
-                <?= htmlspecialchars(substr($row['issue_description'], 0, 50)) . (strlen($row['issue_description']) > 50 ? '...' : '') ?>
-            </div>
-        </td>
-        <td>
-            <strong><?= htmlspecialchars($row['first_name'].' '.$row['last_name']); ?></strong><br>
-            <small style="color: var(--clr-muted);">Grade <?= htmlspecialchars($row['grade_level']); ?></small>
-        </td>
-        <td>
-            <span class="badge level-badge <?= $level_class; ?>">
-                <?= ucfirst($row['section_level']); ?>
-            </span>
-        </td>
-        <td><?= htmlspecialchars($row['adviser_name']); ?></td>
-        <td>
-            <?= htmlspecialchars($row['issue_description']); ?><br>
-            <small style="color: var(--clr-muted);">Reason: <?= htmlspecialchars($row['referral_reason']); ?></small>
-        </td>
-        <td>
-            <span class="badge <?= $priority_class; ?>">
-                <i class="fas fa-flag"></i> <?= ucfirst($row['priority']); ?>
-            </span>
-        </td>
-        <td>
-            <span class="badge <?= $status_class; ?>">
-                <i class="fas fa-circle-notch"></i> <?= ucfirst($row['status']); ?>
-            </span>
-            <?php if ($row['appointment_count'] > 0): ?>
-                <br><small style="color: var(--clr-muted);"><?= $row['appointment_count']; ?> appt(s)</small>
-            <?php endif; ?>
-        </td>
-        <td>
-            <div class="action-buttons">
-                <?php if ($row['status'] !== 'closed' && $row['status'] !== 'completed'): ?>
-                    <a href="create_appointment.php?referral_id=<?= $row['id']; ?>" class="btn-action btn-primary">
-                        <i class="fas fa-calendar-plus"></i> Book Session
-                    </a>
-                <?php else: ?>
-                    <span class="btn-action btn-disabled">
+            <?php while($row = $result->fetch_assoc()): 
+              $priority_class = 'priority-' . strtolower($row['priority']);
+              $status_class = 'status-' . strtolower($row['status']);
+              $level_class = 'level-' . strtolower($row['section_level']);
+            ?>
+              <tr>
+                <td>
+                  <span class="badge category-badge">
+                    <?= ucfirst($row['category']); ?>
+                  </span>
+                  <div class="issue-preview" title="<?= htmlspecialchars($row['issue_description']) ?>">
+                    <?= htmlspecialchars(substr($row['issue_description'], 0, 50)) . (strlen($row['issue_description']) > 50 ? '...' : '') ?>
+                  </div>
+                </td>
+                <td>
+                  <strong><?= htmlspecialchars($row['first_name'].' '.$row['last_name']); ?></strong><br>
+                  <small style="color: var(--clr-muted);">Grade <?= htmlspecialchars($row['grade_level']); ?></small>
+                </td>
+                <td>
+                  <span class="badge level-badge <?= $level_class; ?>">
+                    <?= ucfirst($row['section_level']); ?>
+                  </span>
+                </td>
+                <td><?= htmlspecialchars($row['adviser_name']); ?></td>
+                <td>
+                  <?= htmlspecialchars($row['issue_description']); ?><br>
+                  <small style="color: var(--clr-muted);">Reason: <?= htmlspecialchars($row['referral_reason']); ?></small>
+                </td>
+                <td>
+                  <span class="badge <?= $priority_class; ?>">
+                    <i class="fas fa-flag"></i> <?= ucfirst($row['priority']); ?>
+                  </span>
+                </td>
+                <td>
+                  <span class="badge <?= $status_class; ?>">
+                    <i class="fas fa-circle-notch"></i> <?= ucfirst($row['status']); ?>
+                  </span>
+                  <?php if ($row['appointment_count'] > 0): ?>
+                    <br><small style="color: var(--clr-muted);"><?= $row['appointment_count']; ?> appt(s)</small>
+                  <?php endif; ?>
+                </td>
+                <td>
+                  <div class="action-buttons">
+                    <?php if ($row['status'] === 'scheduled' && $row['appointment_count'] > 0): ?>
+                      <?php if ($row['appointment_id']): ?>
+                        <a href="create_session.php?appointment_id=<?= $row['appointment_id']; ?>" class="btn-action btn-primary">
+                          <i class="fas fa-comments"></i> Start Session
+                        </a>
+                      <?php else: ?>
+                        <span class="btn-action btn-disabled">
+                          <i class="fas fa-calendar-check"></i> Appointment Scheduled
+                        </span>
+                      <?php endif; ?>
+                    <?php elseif ($row['status'] === 'open' || $row['status'] === 'scheduled'): ?>
+                      <a href="create_appointment.php?referral_id=<?= $row['id']; ?>" class="btn-action btn-primary">
+                        <i class="fas fa-calendar-plus"></i> Book Appointment
+                      </a>
+                    <?php elseif ($row['status'] === 'completed'): ?>
+                      <span class="btn-action btn-disabled">
+                        <i class="fas fa-check"></i> Completed
+                      </span>
+                    <?php elseif ($row['status'] === 'in_session'): ?>
+                      <span class="btn-action btn-warning">
+                        <i class="fas fa-comments"></i> Session in Progress
+                      </span>
+                    <?php else: ?>
+                      <span class="btn-action btn-disabled">
                         <i class="fas fa-lock"></i> <?= ucfirst($row['status']); ?>
-                    </span>
-                <?php endif; ?>
-                <a href="referral_details.php?id=<?= $row['id']; ?>" class="btn-action btn-secondary">
-                    <i class="fas fa-eye"></i> View Details
-                </a>
-            </div>
-        </td>
-    </tr>
-<?php endwhile; ?>
+                      </span>
+                    <?php endif; ?>
+                    
+                    <!-- <a href="referral_details.php?id=<?= $row['id']; ?>" class="btn-action btn-secondary">
+                      <i class="fas fa-eye"></i> View Details
+                    </a> -->
+                  </div>
+                </td>
+              </tr>
+            <?php endwhile; ?>
           </tbody>
         </table>
       <?php else: ?>
@@ -402,7 +466,6 @@ if ($critical_stmt = $conn->prepare($critical_sql)) {
   </script>
 </body>
 </html>
-
 
 <?php
 // Safely close statements only if they exist

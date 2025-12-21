@@ -22,7 +22,7 @@ if (isset($_POST['accept_request'])) {
         die("Prepare failed: " . $conn->error);
     }
     
-    $stmt->bind_param("ii", $user_id, $appointment_id);
+    $stmt->bind_param("ii", $counselor_db_id, $appointment_id);
     
     if ($stmt->execute()) {
         // Log the action

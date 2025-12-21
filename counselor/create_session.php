@@ -3,34 +3,32 @@ include('../includes/auth_check.php');
 checkRole(['counselor']);
 include('../config/db.php');
 include('../includes/functions.php');
-include_once('../includes/sms_helper.php'); 
 
 $counselor_id = intval($_SESSION['user_id']);
 $appointment_id = isset($_GET['appointment_id']) ? intval($_GET['appointment_id']) : 0;
 
-// Get counselor info with prepared statement
-$stmt = $conn->prepare("SELECT username, full_name FROM users WHERE id = ?");
+// Get counselor info
+$stmt = $conn->prepare("SELECT c.id as counselor_db_id, u.full_name FROM counselors c JOIN users u ON c.user_id = u.id WHERE u.id = ?");
 $stmt->bind_param("i", $counselor_id);
 $stmt->execute();
 $result = $stmt->get_result();
 $counselor = $result->fetch_assoc();
 $stmt->close();
 
+if (!$counselor) {
+    die("Counselor information not found.");
+}
+
+$counselor_db_id = $counselor['counselor_db_id'];
 $student_id = 0;
 $appointment_info = null;
 $student_info = null;
+$referral_id = null;
 
 // If coming from appointment, pre-fill data
 if ($appointment_id > 0) {
-    $stmt = $conn->prepare("
-        SELECT a.student_id, a.start_time, a.end_time, a.mode, a.notes,
-               s.first_name, s.last_name, s.grade_level, sec.section_name
-        FROM appointments a
-        JOIN students s ON a.student_id = s.id
-        LEFT JOIN sections sec ON s.section_id = sec.id
-        WHERE a.id = ? AND a.counselor_id = ? AND a.status = 'confirmed'
-    ");
-    $stmt->bind_param("ii", $appointment_id, $counselor_id);
+    $stmt = $conn->prepare("SELECT a.*, r.id as referral_id, s.first_name, s.last_name, s.grade_level, sec.section_name FROM appointments a JOIN referrals r ON a.referral_id = r.id JOIN students s ON a.student_id = s.id LEFT JOIN sections sec ON s.section_id = sec.id WHERE a.id = ? AND a.counselor_id = ? AND a.status IN ('scheduled', 'confirmed')");
+    $stmt->bind_param("ii", $appointment_id, $counselor_db_id);
     $stmt->execute();
     $result = $stmt->get_result();
     $appointment_info = $result->fetch_assoc();
@@ -38,6 +36,7 @@ if ($appointment_id > 0) {
     
     if ($appointment_info) {
         $student_id = $appointment_info['student_id'];
+        $referral_id = $appointment_info['referral_id'];
         $student_info = [
             'name' => $appointment_info['first_name'] . ' ' . $appointment_info['last_name'],
             'grade' => $appointment_info['grade_level'],
@@ -51,101 +50,115 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     $start = $_POST['start_time'];
     $end = $_POST['end_time'];
     $location = trim($_POST['location']);
-    $notes = trim($_POST['notes_draft']);
+    $mode = $_POST['mode'] ?? 'in-person';
+    $notes = trim($_POST['notes_draft'] ?? '');
     $session_type = $_POST['session_type'] ?? 'regular';
     $issues_discussed = trim($_POST['issues_discussed'] ?? '');
-    $interventions_used = trim($_POST['interventions_used'] ?? '');
     $follow_up_plan = trim($_POST['follow_up_plan'] ?? '');
+    $follow_up_needed = isset($_POST['follow_up_needed']) ? 1 : 0;
+    $follow_up_date = !empty($_POST['follow_up_date']) ? $_POST['follow_up_date'] : null;
+    $status = 'in_progress';
     
     // Validate times
     if (strtotime($end) <= strtotime($start)) {
         $error = "End time must be after start time.";
     } else {
-        // Start transaction
-        $conn->begin_transaction();
+        // Set defaults
+        $notes = empty($notes) ? 'Session notes pending' : $notes;
+        $issues_discussed = empty($issues_discussed) ? 'General counseling discussion' : $issues_discussed;
+        $follow_up_plan = empty($follow_up_plan) ? 'No specific follow-up plan' : $follow_up_plan;
         
-        try {
-            // Insert session with prepared statement
-            $stmt = $conn->prepare("
-                INSERT INTO sessions (
-                    $appointment_id ?: 0, counselor_id, student_id, start_time, end_time, location, 
-                    notes_draft, status, session_type, issues_discussed, 
-                    interventions_used, follow_up_plan
-                ) VALUES (?, ?, ?, ?, ?, ?, 'in_progress', ?, ?, ?, ?)
-            ");
-            $stmt->bind_param(
-                "iissssssss", 
-                $counselor_id, $student_id, $start, $end, $location, 
-                $notes, $session_type, $issues_discussed, 
-                $interventions_used, $follow_up_plan
-            );
-            
-            if (!$stmt->execute()) {
-                throw new Exception("Session creation failed: " . $stmt->error);
-            }
-            
-            $session_id = $stmt->insert_id;
-            
-            // If session is from appointment, update appointment status
-            if ($appointment_id > 0) {
-                $update_stmt = $conn->prepare("
-                    UPDATE appointments 
-                    SET status = 'in_progress', updated_at = NOW() 
-                    WHERE id = ?
-                ");
-                $update_stmt->bind_param("i", $appointment_id);
-                if (!$update_stmt->execute()) {
-                    throw new Exception("Appointment update failed: " . $update_stmt->error);
-                }
-                $update_stmt->close();
-            }
-            
-            // Log action
-            logAction($counselor_id, 'Create Session', 'sessions', $session_id, 
-                     "New session created" . ($appointment_id > 0 ? " from appointment #$appointment_id" : ""));
-            
-            // Send SMS to guardian
-            $guardian_stmt = $conn->prepare("
-                SELECT g.phone 
-                FROM student_guardians sg 
-                JOIN guardians g ON sg.guardian_id = g.id 
-                WHERE sg.student_id = ?
-                LIMIT 1
-            ");
-            $guardian_stmt->bind_param("i", $student_id);
-            $guardian_stmt->execute();
-            $guardian_result = $guardian_stmt->get_result();
-            $guardian = $guardian_result->fetch_assoc();
-            $guardian_stmt->close();
-            
-            if ($guardian && !empty($guardian['phone'])) {
-                $msg = "Counseling session has started for your child. Session ID: #$session_id";
-                sendSMS($counselor_id, $guardian['phone'], $msg);
-            }
-            
-            // Commit transaction
-            $conn->commit();
-            
-            $_SESSION['success'] = "Session recorded successfully!";
-            header("Location: sessions.php?id=" . $session_id);
-            exit;
-            
-        } catch (Exception $e) {
-            $conn->rollback();
-            $error = $e->getMessage();
+        // Handle NULL for follow_up_date
+        if (empty($follow_up_date)) {
+            $follow_up_date = null;
         }
         
-        if (isset($stmt)) $stmt->close();
+        // Handle appointment_id
+        $appointment_id_for_db = $appointment_id > 0 ? $appointment_id : null;
+        
+        // SIMPLIFIED SQL - Only required columns first
+        $sql = "INSERT INTO sessions (
+            appointment_id, 
+            counselor_id, 
+            student_id, 
+            start_time, 
+            end_time, 
+            location, 
+            mode, 
+            status
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)";
+        
+        $stmt = $conn->prepare($sql);
+        
+        if (!$stmt) {
+            $error = "Database error: " . $conn->error;
+        } else {
+            // Bind minimal parameters
+            $stmt->bind_param("iiisssss", 
+                $appointment_id_for_db,
+                $counselor_db_id,
+                $student_id,
+                $start,
+                $end,
+                $location,
+                $mode,
+                $status
+            );
+            
+            if ($stmt->execute()) {
+                $session_id = $stmt->insert_id;
+                $stmt->close();
+                
+                // Now update the session with additional fields
+                $update_sql = "UPDATE sessions SET 
+                    notes_draft = ?,
+                    session_type = ?,
+                    issues_discussed = ?,
+                    follow_up_needed = ?,
+                    follow_up_date = ?,
+                    follow_up_plan = ?
+                    WHERE id = ?";
+                
+                $update_stmt = $conn->prepare($update_sql);
+                if ($update_stmt) {
+                    $update_stmt->bind_param("sssisss", 
+                        $notes,
+                        $session_type,
+                        $issues_discussed,
+                        $follow_up_needed,
+                        $follow_up_date,
+                        $follow_up_plan,
+                        $session_id
+                    );
+                    $update_stmt->execute();
+                    $update_stmt->close();
+                }
+                
+                // Update appointment if from appointment
+                if ($appointment_id > 0) {
+                    $conn->query("UPDATE appointments SET status = 'in_session', updated_at = NOW() WHERE id = $appointment_id");
+                    
+                    if ($referral_id) {
+                        $conn->query("UPDATE referrals SET status = 'in_session', updated_at = NOW() WHERE id = $referral_id");
+                    }
+                }
+                
+                // Log action
+                logAction($counselor_id, 'Create Session', 'sessions', $session_id, "New session created");
+                
+                $_SESSION['success'] = "Session recorded successfully!";
+                header("Location: sessions.php");
+                exit;
+            } else {
+                $error = "Failed to create session: " . $stmt->error;
+            }
+            $stmt->close();
+        }
     }
 }
 
-// Get student list with prepared statement
-$stmt = $conn->prepare("
-    SELECT s.id, s.first_name, s.last_name, s.grade_level, sec.section_name
-    FROM students s
-    LEFT JOIN sections sec ON s.section_id = sec.id
-    ORDER BY s.last_name ASC, s.first_name ASC
-");
+// Get student list
+$stmt = $conn->prepare("SELECT s.id, s.first_name, s.last_name, s.grade_level, sec.section_name FROM students s LEFT JOIN sections sec ON s.section_id = sec.id ORDER BY s.last_name ASC, s.first_name ASC");
 $stmt->execute();
 $students_result = $stmt->get_result();
 $students = [];
@@ -173,7 +186,7 @@ $stmt->close();
     <button id="sidebarToggle" class="toggle-btn">☰</button>
     <h2 class="logo">GOMS Counselor</h2>
     <div class="sidebar-user">
-      Counselor · <?= htmlspecialchars($counselor['full_name'] ?? $counselor['username']); ?>
+      Counselor · <?= htmlspecialchars($counselor['full_name']); ?>
     </div>
     <a href="dashboard.php" class="nav-link">
       <span class="icon"><i class="fas fa-home"></i></span><span class="label">Dashboard</span>
@@ -217,13 +230,18 @@ $stmt->close();
         (Grade <?= htmlspecialchars($student_info['grade']); ?> - <?= htmlspecialchars($student_info['section']); ?>)
       </div>
       <div class="helper-text" style="margin-top: 8px;">
-        Appointment details will be pre-filled. Status will be updated to "In Progress".
+        Appointment will be updated to 'in_session' status. Referral will be marked as 'in_session'.
       </div>
     </div>
     <?php endif; ?>
 
     <div class="card">
       <form method="POST" action="" id="sessionForm">
+        <!-- Hidden field for appointment_id -->
+        <?php if ($appointment_id > 0): ?>
+          <input type="hidden" name="appointment_id" value="<?= $appointment_id ?>">
+        <?php endif; ?>
+        
         <div class="form-body">
           <div class="form-row">
             <div class="form-group">
@@ -269,26 +287,49 @@ $stmt->close();
             </div>
             
             <div class="form-group">
+              <label class="required">Session Mode</label>
+              <select name="mode" required>
+                <option value="in-person" <?= ($appointment_info && $appointment_info['mode'] === 'in-person') ? 'selected' : '' ?>>In-person</option>
+                <option value="online" <?= ($appointment_info && $appointment_info['mode'] === 'online') ? 'selected' : '' ?>>Online</option>
+                <option value="phone" <?= ($appointment_info && $appointment_info['mode'] === 'phone') ? 'selected' : '' ?>>Phone</option>
+              </select>
+            </div>
+            
+            <div class="form-group">
               <label class="required">Session Type</label>
               <select name="session_type" required>
                 <option value="regular" selected>Regular Session</option>
                 <option value="initial">Initial Assessment</option>
                 <option value="followup">Follow-up</option>
-                <option value="crisis">Crisis Intervention</option>
+                <!-- <option value="crisis">Crisis Intervention</option> -->
                 <option value="group">Group Session</option>
               </select>
             </div>
+          </div>
+          
+          <div class="form-row two-col">
+            <div class="form-group">
+              <label>Follow-up Needed?</label>
+              <div style="display: flex; align-items: center; gap: 10px; margin-top: 8px;">
+                <label style="display: flex; align-items: center; gap: 5px;">
+                  <input type="checkbox" name="follow_up_needed" value="1" id="followUpCheckbox">
+                  Yes, schedule a follow-up
+                </label>
+              </div>
+            </div>
             
             <div class="form-group">
-              <label>Duration</label>
-              <input type="text" id="durationDisplay" readonly style="background: var(--clr-surface);">
+              <label>Follow-up Date</label>
+              <input type="date" name="follow_up_date" id="followUpDate" 
+                     min="<?= date('Y-m-d') ?>" 
+                     <?= !isset($_POST['follow_up_needed']) ? 'disabled' : '' ?>>
             </div>
           </div>
 
           <h3 class="section-title"><i class="fas fa-clipboard"></i> Session Content</h3>
 
           <div class="form-group">
-            <label class="required">Notes Draft</label>
+            <label class="required">Session Notes</label>
             <textarea name="notes_draft" placeholder="Enter session notes, observations, discussion points, follow-up actions..." 
                       maxlength="2000"><?= $appointment_info ? htmlspecialchars($appointment_info['notes']) : '' ?></textarea>
             <div class="character-count" id="notesCount">0/2000</div>
@@ -303,13 +344,13 @@ $stmt->close();
             </div>
           </div>
 
-          <div class="form-row">
+          <!-- <div class="form-row">
             <div class="form-group">
               <label>Interventions Used</label>
               <textarea name="interventions_used" class="small" placeholder="Describe counseling techniques or interventions applied..." maxlength="1000"></textarea>
               <div class="character-count" id="interventionsCount">0/1000</div>
             </div>
-          </div>
+          </div> -->
 
           <div class="form-row">
             <div class="form-group">
@@ -350,7 +391,7 @@ $stmt->close();
       
       // Character counter functionality
       function setupCharacterCounter(textareaId, counterId, maxLength) {
-        const textarea = document.getElementById(textareaId);
+        const textarea = document.querySelector(`textarea[name="${textareaId}"]`);
         if (!textarea) return;
         
         const counter = document.getElementById(counterId);
@@ -375,77 +416,44 @@ $stmt->close();
       // Setup counters
       setupCharacterCounter('notes_draft', 'notesCount', 2000);
       setupCharacterCounter('issues_discussed', 'issuesCount', 1000);
-      setupCharacterCounter('interventions_used', 'interventionsCount', 1000);
+      // setupCharacterCounter('interventions_used', 'interventionsCount', 1000);
       setupCharacterCounter('follow_up_plan', 'followupCount', 1000);
       
-      // Duration calculator
-      const startInput = document.querySelector('input[name="start_time"]');
-      const endInput = document.querySelector('input[name="end_time"]');
-      const durationDisplay = document.getElementById('durationDisplay');
+      // Follow-up date toggle
+      const followUpCheckbox = document.getElementById('followUpCheckbox');
+      const followUpDate = document.getElementById('followUpDate');
       
-      function calculateDuration() {
-        const start = new Date(startInput.value);
-        const end = new Date(endInput.value);
-        
-        if (start && end && start < end) {
-          const diffMs = end - start;
-          const diffMins = Math.floor(diffMs / 60000);
-          const hours = Math.floor(diffMins / 60);
-          const minutes = diffMins % 60;
-          
-          if (hours > 0) {
-            durationDisplay.value = `${hours}h ${minutes}m`;
-          } else {
-            durationDisplay.value = `${minutes}m`;
+      if (followUpCheckbox && followUpDate) {
+        followUpCheckbox.addEventListener('change', function() {
+          followUpDate.disabled = !this.checked;
+          if (!this.checked) {
+            followUpDate.value = '';
           }
-        } else {
-          durationDisplay.value = '';
-        }
+        });
       }
       
-      startInput.addEventListener('change', calculateDuration);
-      endInput.addEventListener('change', calculateDuration);
-      
-      // Initial calculation
-      calculateDuration();
-      
       // Form validation
-      document.getElementById('sessionForm').addEventListener('submit', function(e) {
-        const start = new Date(startInput.value);
-        const end = new Date(endInput.value);
-        
-        if (start >= end) {
-          e.preventDefault();
-          alert('End time must be after start time.');
-          startInput.focus();
-          return false;
-        }
-        
-        // Check if session is in the future (with 5 minute buffer)
-        const now = new Date();
-        const buffer = new Date(now.getTime() - 5 * 60000); // 5 minutes ago
-        
-        if (start > new Date(now.getTime() + 60 * 60000)) { // More than 1 hour in future
-          if (!confirm('This session is scheduled for more than 1 hour from now. Are you sure you want to start it?')) {
-            e.preventDefault();
-            return false;
+      const sessionForm = document.getElementById('sessionForm');
+      if (sessionForm) {
+        sessionForm.addEventListener('submit', function(e) {
+          const startInput = document.querySelector('input[name="start_time"]');
+          const endInput = document.querySelector('input[name="end_time"]');
+          
+          if (startInput && endInput) {
+            const start = new Date(startInput.value);
+            const end = new Date(endInput.value);
+            
+            if (start >= end) {
+              e.preventDefault();
+              alert('End time must be after start time.');
+              startInput.focus();
+              return false;
+            }
           }
-        }
-        
-        return true;
-      });
-      
-      // Auto-set end time based on start time
-      startInput.addEventListener('change', function() {
-        const start = new Date(this.value);
-        const defaultEnd = new Date(start.getTime() + 60 * 60000); // +1 hour
-        
-        // Only auto-set if end time is empty or earlier than start
-        if (!endInput.value || new Date(endInput.value) <= start) {
-          endInput.value = defaultEnd.toISOString().slice(0, 16);
-          calculateDuration();
-        }
-      });
+          
+          return true;
+        });
+      }
     });
   </script>
 </body>

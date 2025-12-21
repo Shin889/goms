@@ -347,62 +347,62 @@ $summary['total_resolved'] = $summary['referral_cases']['completed_referrals'] ?
     </div>
     
 <?php if ($report_type == 'summary'): ?>
-  <!-- Summary Report -->
-  <div class="summary-grid">
-    <div class="summary-card cases">
-      <div class="summary-header">
-        <div class="summary-title">Referral Statistics</div>
-        <div class="summary-icon"><i class="fas fa-folder-open"></i></div>
-      </div>
-      <div class="summary-value"><?= $summary['total_new_cases']; ?></div>
-      <div class="summary-details">
-        <div>New Referrals: <?= $summary['total_new_cases']; ?></div>
-        <div>Ongoing: <?= $summary['total_ongoing']; ?></div>
-        <div>Completed: <?= $summary['total_resolved']; ?></div>
-      </div>
+<!-- Summary Report -->
+<div class="summary-grid">
+  <div class="summary-card cases">
+    <div class="summary-header">
+      <div class="summary-title">Referral Statistics</div>
+      <div class="summary-icon"><i class="fas fa-folder-open"></i></div>
     </div>
-    
-    <div class="summary-card activity">
-      <div class="summary-header">
-        <div class="summary-title">Activity Summary</div>
-        <div class="summary-icon"><i class="fas fa-chart-line"></i></div>
-      </div>
-      <div class="summary-value"><?= $summary['appointments']; ?></div>
-      <div class="summary-details">
-        <div>Appointments: <?= $summary['appointments']; ?></div>
-        <div>Sessions: <?= $summary['sessions']; ?></div>
-        <div>Reports: <?= $summary['reports']; ?></div>
-      </div>
+    <div class="summary-value"><?= $summary['total_new_cases']; ?></div>
+    <div class="summary-details">
+      <div>New Referrals: <?= $summary['total_new_cases']; ?></div>
+      <div>Ongoing: <?= $summary['total_ongoing']; ?></div>
+      <div>Completed: <?= $summary['total_resolved']; ?></div>
     </div>
-    
-   <!-- In the distribution summary card -->
-<div class="summary-card distribution">
-  <div class="summary-header">
-    <div class="summary-title">Referral Distribution</div>
-    <div class="summary-icon"><i class="fas fa-layer-group"></i></div>
   </div>
-  <div class="summary-value"><?= is_array($summary['by_grade']) ? count($summary['by_grade']) : 0; ?></div>
-  <div class="summary-details">
-    <div>Grade Levels: <?= is_array($summary['by_grade']) ? count($summary['by_grade']) : 0; ?></div>
-    <div>Categories: <?= is_array($summary['by_category']) ? count($summary['by_category']) : 0; ?></div>
-    <div>Total Referrals: <?= $summary['referrals']; ?></div>
-  </div>
-</div>
-    
-    <div class="summary-card counselors">
-      <div class="summary-header">
-        <div class="summary-title">Counselor Activity</div>
-        <div class="summary-icon"><i class="fas fa-user-md"></i></div>
-      </div>
-      <div class="summary-value"><?= count($summary['counselor_activity']); ?></div>
-      <div class="summary-details">
-        <div>Active Counselors: <?= count($summary['counselor_activity']); ?></div>
-        <div>Total Sessions: <?= $summary['sessions']; ?></div>
-        <div>Total Reports: <?= $summary['reports']; ?></div>
-      </div>
+  
+  <div class="summary-card activity">
+    <div class="summary-header">
+      <div class="summary-title">Activity Summary</div>
+      <div class="summary-icon"><i class="fas fa-chart-line"></i></div>
     </div>
-      
-      <!-- Detailed Reports -->
+    <div class="summary-value"><?= $summary['appointments']; ?></div>
+    <div class="summary-details">
+      <div>Appointments: <?= $summary['appointments']; ?></div>
+      <div>Sessions: <?= $summary['sessions']; ?></div>
+      <div>Reports: <?= $summary['reports']; ?></div>
+    </div>
+  </div>
+  
+  <div class="summary-card distribution">
+    <div class="summary-header">
+      <div class="summary-title">Referral Distribution</div>
+      <div class="summary-icon"><i class="fas fa-layer-group"></i></div>
+    </div>
+    <div class="summary-value"><?= is_array($summary['by_grade']) ? count($summary['by_grade']) : 0; ?></div>
+    <div class="summary-details">
+      <div>Grade Levels: <?= is_array($summary['by_grade']) ? count($summary['by_grade']) : 0; ?></div>
+      <div>Categories: <?= is_array($summary['by_category']) ? count($summary['by_category']) : 0; ?></div>
+      <div>Total Referrals: <?= $summary['referrals']; ?></div>
+    </div>
+  </div>
+  
+  <div class="summary-card counselors">
+    <div class="summary-header">
+      <div class="summary-title">Counselor Activity</div>
+      <div class="summary-icon"><i class="fas fa-user-md"></i></div>
+    </div>
+    <div class="summary-value"><?= count($summary['counselor_activity']); ?></div>
+    <div class="summary-details">
+      <div>Active Counselors: <?= count($summary['counselor_activity']); ?></div>
+      <div>Total Sessions: <?= $summary['sessions']; ?></div>
+      <div>Total Reports: <?= $summary['reports']; ?></div>
+    </div>
+  </div>
+</div> <!-- Close summary-grid -->
+
+<!-- Detailed Reports - This should be OUTSIDE the summary-grid -->
 <div class="detail-cards">
   <div class="detail-card">
     <div class="detail-title">
@@ -466,8 +466,7 @@ $summary['total_resolved'] = $summary['referral_cases']['completed_referrals'] ?
       <?php endif; ?>
     </div>
   </div>
-</div>
-  </div>
+</div> <!-- Close detail-cards -->
     <?php endif; ?>
     
     <!-- Export Options -->

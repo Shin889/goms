@@ -36,10 +36,10 @@ if ($adviser_info && isset($adviser_info['id'])) {
     $students = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
 }
 
-// Get available counselors
+// Get available counselors (for informational purposes only - not for selection)
 $counselors = [];
 $stmt = $conn->prepare("
-    SELECT c.id, u.full_name, c.specialty 
+    SELECT c.id, u.full_name, c.specialty, c.handles_level 
     FROM counselors c
     JOIN users u ON c.user_id = u.id
     WHERE u.is_active = 1 AND u.is_approved = 1
@@ -69,41 +69,99 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     } elseif (strlen($referral_reason) < 10) {
         $error = 'Referral reason must be at least 10 characters.';
     } else {
-        // Create direct referral
+        // First, get the student's grade level to determine counselor assignment
         $stmt = $conn->prepare("
-            INSERT INTO referrals 
-            (student_id, category, issue_description, adviser_id, 
-             referral_reason, priority, notes, status, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, 'open', NOW(), NOW())
+            SELECT grade_level 
+            FROM students 
+            WHERE id = ?
         ");
-        $stmt->bind_param("ississs", 
-            $student_id, 
-            $category, 
-            $issue_description,
-            $adviser_info['id'],
-            $referral_reason,
-            $priority,
-            $notes
-        );
+        $stmt->bind_param("i", $student_id);
+        $stmt->execute();
+        $student_result = $stmt->get_result();
+        $student = $student_result->fetch_assoc();
         
-        if ($stmt->execute()) {
-            $referral_id = $conn->insert_id;
-            
-            // Log audit
-            $audit_stmt = $conn->prepare("
-                INSERT INTO audit_logs 
-                (user_id, action, action_summary, target_table, target_id, created_at)
-                VALUES (?, 'CREATE', 'Created direct referral', 'referrals', ?, NOW())
-            ");
-            $audit_stmt->bind_param("ii", $user_id, $referral_id);
-            $audit_stmt->execute();
-            
-            $success = 'Referral created successfully! Redirecting to referrals page...';
-            
-            // Redirect after 3 seconds
-            header("refresh:3;url=referrals.php");
+        if (!$student) {
+            $error = 'Student not found.';
         } else {
-            $error = 'Failed to create referral: ' . $conn->error;
+            // Determine level based on grade
+            $grade = intval($student['grade_level']);
+            $student_level = ($grade >= 7 && $grade <= 10) ? 'Junior' : 'Senior';
+            
+            // Find appropriate counselor
+            $counselor_id = null;
+            $stmt = $conn->prepare("
+                SELECT c.id 
+                FROM counselors c
+                JOIN users u ON c.user_id = u.id
+                WHERE u.is_active = 1 
+                AND u.is_approved = 1
+                AND (c.handles_level = ? OR c.handles_level = 'Both')
+                ORDER BY 
+                    CASE c.handles_level 
+                        WHEN ? THEN 0  -- Exact match first
+                        ELSE 1
+                    END,
+                    RAND()  -- Random selection among suitable counselors
+                LIMIT 1
+            ");
+            $stmt->bind_param("ss", $student_level, $student_level);
+            $stmt->execute();
+            $counselor_result = $stmt->get_result();
+            
+            if ($counselor_row = $counselor_result->fetch_assoc()) {
+                $counselor_id = $counselor_row['id'];
+            }
+            
+            // Create direct referral with counselor assignment
+            $stmt = $conn->prepare("
+                INSERT INTO referrals 
+                (student_id, category, issue_description, adviser_id, 
+                 counselor_id, referral_reason, priority, notes, status, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'open', NOW(), NOW())
+            ");
+            $stmt->bind_param("issiisss", 
+                $student_id, 
+                $category, 
+                $issue_description,
+                $adviser_info['id'],
+                $counselor_id,  // This can be null if no suitable counselor found
+                $referral_reason,
+                $priority,
+                $notes
+            );
+            
+            if ($stmt->execute()) {
+                $referral_id = $conn->insert_id;
+                
+                // Log audit
+                $audit_stmt = $conn->prepare("
+                    INSERT INTO audit_logs 
+                    (user_id, action, action_summary, target_table, target_id, created_at)
+                    VALUES (?, 'CREATE', 'Created direct referral', 'referrals', ?, NOW())
+                ");
+                $audit_stmt->bind_param("ii", $user_id, $referral_id);
+                $audit_stmt->execute();
+                
+                // Log counselor assignment if applicable
+                if ($counselor_id) {
+                    $audit_stmt = $conn->prepare("
+                        INSERT INTO audit_logs 
+                        (user_id, action, action_summary, target_table, target_id, created_at)
+                        VALUES (?, 'ASSIGN', 'Automatically assigned to counselor based on grade level', 'referrals', ?, NOW())
+                    ");
+                    $audit_stmt->bind_param("ii", $user_id, $referral_id);
+                    $audit_stmt->execute();
+                }
+                
+                $success = 'Referral created successfully!' . 
+                          ($counselor_id ? ' Automatically assigned to appropriate counselor.' : 
+                          ' Note: No suitable counselor found for this grade level. Admin will need to assign manually.');
+                
+                // Redirect after 3 seconds
+                header("refresh:3;url=referrals.php");
+            } else {
+                $error = 'Failed to create referral: ' . $conn->error;
+            }
         }
     }
 }

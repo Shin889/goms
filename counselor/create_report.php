@@ -5,7 +5,11 @@ include('../config/db.php');
 include('../includes/functions.php');
 include_once('../includes/sms_helper.php');
 
-$counselor_id = intval($_SESSION['user_id']);
+// Enable error reporting
+error_reporting(E_ALL);
+ini_set('display_errors', 1);
+
+$user_id = intval($_SESSION['user_id']);
 $session_id = isset($_GET['session_id']) ? intval($_GET['session_id']) : 0;
 
 // Validate session_id
@@ -15,22 +19,34 @@ if ($session_id <= 0) {
     exit;
 }
 
-// Get counselor info with prepared statement
-$stmt = $conn->prepare("SELECT username FROM users WHERE id = ?");
-$stmt->bind_param("i", $counselor_id);
+// Get counselor info with prepared statement - get the counselor's database ID
+$stmt = $conn->prepare("
+    SELECT c.id as counselor_db_id, u.username 
+    FROM counselors c 
+    JOIN users u ON c.user_id = u.id 
+    WHERE u.id = ?
+");
+$stmt->bind_param("i", $user_id);
 $stmt->execute();
 $result = $stmt->get_result();
 $counselor = $result->fetch_assoc();
 $stmt->close();
 
+if (!$counselor) {
+    die("Counselor information not found.");
+}
+
+$counselor_db_id = $counselor['counselor_db_id'];
+$counselor_username = $counselor['username'];
+
 // Get session info with prepared statement
 $stmt = $conn->prepare("
-    SELECT s.start_time, s.end_time, stu.first_name, stu.last_name
+    SELECT s.*, stu.first_name, stu.last_name, stu.grade_level, stu.gender
     FROM sessions s
     JOIN students stu ON s.student_id = stu.id
     WHERE s.id = ? AND s.counselor_id = ?
 ");
-$stmt->bind_param("ii", $session_id, $counselor_id);
+$stmt->bind_param("ii", $session_id, $counselor_db_id);
 $stmt->execute();
 $result = $stmt->get_result();
 $session_info = $result->fetch_assoc();
@@ -39,6 +55,13 @@ $stmt->close();
 // Check if session exists and belongs to this counselor
 if (!$session_info) {
     $_SESSION['error'] = "Session not found or you don't have access.";
+    header("Location: sessions.php");
+    exit;
+}
+
+// Check if session is completed (can only create reports for completed sessions)
+if ($session_info['status'] !== 'completed') {
+    $_SESSION['error'] = "Only completed sessions can have reports. Current status: " . $session_info['status'];
     header("Location: sessions.php");
     exit;
 }
@@ -55,6 +78,7 @@ if ($check_result->num_rows > 0) {
 }
 $check_stmt->close();
 
+// Handle form submission
 if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     $title = trim($_POST['title']);
     $summary = trim($_POST['summary']);
@@ -64,28 +88,42 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     if (empty($title) || empty($summary) || empty($content)) {
         $error = "All fields are required.";
     } else {
-        // Insert report with prepared statement
-        $stmt = $conn->prepare("
-            INSERT INTO reports (session_id, counselor_id, title, summary, content, submission_date) 
-            VALUES (?, ?, ?, ?, ?, NOW())
-        ");
-        $stmt->bind_param("iisss", $session_id, $counselor_id, $title, $summary, $content);
-
-        if ($stmt->execute()) {
-            $report_id = $stmt->insert_id;
+        // Try SIMPLEST possible INSERT first
+        $sql = "INSERT INTO reports (session_id, counselor_id, title, content) VALUES (?, ?, ?, ?)";
+        
+        $stmt = $conn->prepare($sql);
+        
+        if (!$stmt) {
+            // If that fails, try with summary
+            $sql = "INSERT INTO reports (session_id, counselor_id, title, summary, content) VALUES (?, ?, ?, ?, ?)";
+            $stmt = $conn->prepare($sql);
             
-            // Update session status to 'reported'
-            $update_stmt = $conn->prepare("
-                UPDATE sessions SET status = 'reported' WHERE id = ?
-            ");
-            $update_stmt->bind_param("i", $session_id);
-            $update_stmt->execute();
-            $update_stmt->close();
+            if (!$stmt) {
+                $error = "Database error: " . $conn->error;
+                error_log("SQL Error: " . $conn->error);
+            } else {
+                $stmt->bind_param("iisss", $session_id, $counselor_db_id, $title, $summary, $content);
+            }
+        } else {
+            $stmt->bind_param("iiss", $session_id, $counselor_db_id, $title, $content);
+        }
+        
+        if ($stmt && $stmt->execute()) {
+            $report_id = $stmt->insert_id;
+            $stmt->close();
+            
+            // If we didn't include summary in the INSERT, update it now
+            if (empty($summary) && !empty($summary)) {
+                $update_stmt = $conn->prepare("UPDATE reports SET summary = ? WHERE id = ?");
+                $update_stmt->bind_param("si", $summary, $report_id);
+                $update_stmt->execute();
+                $update_stmt->close();
+            }
             
             // Log action
-            logAction($counselor_id, 'Create Report', 'reports', $report_id, "Report created for session #$session_id");
+            logAction($user_id, 'Create Report', 'reports', $report_id, "Report created for session #$session_id");
 
-            // Fetch guardian's phone (linked to the student in this session)
+            // Fetch guardian's phone
             $guardian_stmt = $conn->prepare("
                 SELECT g.phone 
                 FROM student_guardians sg 
@@ -101,41 +139,20 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             $guardian_stmt->close();
 
             // Send SMS notification
-            if ($guardian && !empty($guardian['phone'])) {
+            if ($guardian && !empty($guardian['phone']) && function_exists('sendSMS')) {
                 $student_name = $session_info['first_name'] . ' ' . $session_info['last_name'];
                 $msg = "Guidance Update: A counseling report has been completed for $student_name. Report ID: #$report_id";
-                sendSMS($counselor_id, $guardian['phone'], $msg);
-            }
-
-            // Also send notification to adviser
-            $adviser_stmt = $conn->prepare("
-                SELECT u.phone 
-                FROM adviser_sections adv_sec
-                JOIN users u ON adv_sec.adviser_user_id = u.id
-                JOIN sections sec ON adv_sec.section_id = sec.id
-                JOIN students stu ON stu.section_id = sec.id
-                JOIN sessions s ON s.student_id = stu.id
-                WHERE s.id = ?
-                LIMIT 1
-            ");
-            $adviser_stmt->bind_param("i", $session_id);
-            $adviser_stmt->execute();
-            $adviser_result = $adviser_stmt->get_result();
-            $adviser = $adviser_result->fetch_assoc();
-            $adviser_stmt->close();
-            
-            if ($adviser && !empty($adviser['phone'])) {
-                $msg = "Counseling Report: A session report has been completed for a student in your section.";
-                sendSMS($counselor_id, $adviser['phone'], $msg);
+                sendSMS($user_id, $guardian['phone'], $msg);
             }
 
             $_SESSION['success'] = "Report submitted successfully!";
-            header("Location: reports.php");
+            header("Location: sessions.php");
             exit;
+            
         } else {
-            $error = "Error creating report: " . $stmt->error;
+            $error = "Error creating report: " . ($stmt ? $stmt->error : $conn->error);
+            if ($stmt) $stmt->close();
         }
-        $stmt->close();
     }
 }
 ?>
@@ -149,6 +166,61 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
   <link rel="stylesheet" href="../utils/css/root.css">
   <link rel="stylesheet" href="../utils/css/dashboard.css">
   <link rel="stylesheet" href="../utils/css/create_report.css">
+  <style>
+    .session-info-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 15px;
+      margin: 20px 0;
+    }
+    .info-item {
+      background: #f8f9fa;
+      padding: 15px;
+      border-radius: 8px;
+    }
+    .info-item .label {
+      font-size: 0.85rem;
+      color: #6c757d;
+      margin-bottom: 5px;
+    }
+    .info-item .value {
+      font-weight: 500;
+    }
+    .info-item.full-width {
+      grid-column: 1 / -1;
+    }
+    .requirements {
+      background: #e3f2fd;
+      padding: 15px;
+      border-radius: 8px;
+      margin: 20px 0;
+    }
+    .requirements ul {
+      margin: 10px 0 0 20px;
+    }
+    .requirements li {
+      margin-bottom: 5px;
+    }
+    .character-count {
+      text-align: right;
+      font-size: 0.85rem;
+      color: #6c757d;
+      margin-top: 5px;
+    }
+    .character-count.warning {
+      color: #ff9800;
+    }
+    .character-count.error {
+      color: #f44336;
+    }
+    .session-badge {
+      background: #007bff;
+      color: white;
+      padding: 3px 8px;
+      border-radius: 4px;
+      font-size: 0.9rem;
+    }
+  </style>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
 </head>
 <body>
@@ -157,7 +229,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     <button id="sidebarToggle" class="toggle-btn">☰</button>
     <h2 class="logo">GOMS Counselor</h2>
     <div class="sidebar-user">
-      Counselor · <?= htmlspecialchars($counselor['username'] ?? ''); ?>
+      Counselor · <?= htmlspecialchars($counselor_username ?? ''); ?>
     </div>
     <a href="dashboard.php" class="nav-link">
       <span class="icon"><i class="fas fa-home"></i></span><span class="label">Dashboard</span>
@@ -170,9 +242,6 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     </a>
     <a href="sessions.php" class="nav-link active">
       <span class="icon"><i class="fas fa-comments"></i></span><span class="label">Sessions</span>
-    </a>
-    <a href="create_report.php" class="nav-link">
-      <span class="icon"><i class="fas fa-file-alt"></i></span><span class="label">Generate Report</span>
     </a>
     <a href="../auth/logout.php" class="logout-link">
       <i class="fas fa-sign-out-alt"></i> Logout
@@ -210,6 +279,14 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
           <div class="value"><?= htmlspecialchars($session_info['first_name'] . ' ' . $session_info['last_name']); ?></div>
         </div>
         <div class="info-item">
+          <div class="label">Grade Level</div>
+          <div class="value">Grade <?= htmlspecialchars($session_info['grade_level']); ?></div>
+        </div>
+        <div class="info-item">
+          <div class="label">Gender</div>
+          <div class="value"><?= htmlspecialchars($session_info['gender'] ?? 'Not specified'); ?></div>
+        </div>
+        <div class="info-item">
           <div class="label">Session Date</div>
           <div class="value"><?= date('M d, Y', strtotime($session_info['start_time'])); ?></div>
         </div>
@@ -217,6 +294,26 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
           <div class="label">Session Time</div>
           <div class="value"><?= date('h:i A', strtotime($session_info['start_time'])) . ' - ' . date('h:i A', strtotime($session_info['end_time'])); ?></div>
         </div>
+        <div class="info-item">
+          <div class="label">Session Type</div>
+          <div class="value"><?= ucfirst($session_info['session_type'] ?: 'Regular'); ?></div>
+        </div>
+        <div class="info-item">
+          <div class="label">Location</div>
+          <div class="value"><?= htmlspecialchars($session_info['location'] ?: 'Not specified'); ?></div>
+        </div>
+        <?php if (!empty($session_info['issues_discussed'])): ?>
+        <div class="info-item full-width">
+          <div class="label">Issues Discussed</div>
+          <div class="value"><?= htmlspecialchars(substr($session_info['issues_discussed'], 0, 100)); ?><?= strlen($session_info['issues_discussed']) > 100 ? '...' : ''; ?></div>
+        </div>
+        <?php endif; ?>
+        <?php if (!empty($session_info['follow_up_plan'])): ?>
+        <div class="info-item full-width">
+          <div class="label">Follow-up Plan</div>
+          <div class="value"><?= htmlspecialchars(substr($session_info['follow_up_plan'], 0, 100)); ?><?= strlen($session_info['follow_up_plan']) > 100 ? '...' : ''; ?></div>
+        </div>
+        <?php endif; ?>
       </div>
     </div>
     <?php endif; ?>
@@ -227,7 +324,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         <li>Title should clearly identify the session focus</li>
         <li>Summary should be 2-3 sentences highlighting key outcomes</li>
         <li>Detailed content should include observations, interventions, and recommendations</li>
-        <li>Reports cannot be edited once submitted</li>
+        <li>Reports are locked by default after submission</li>
         <li>Notifications will be sent to guardian and adviser</li>
       </ul>
     </div>
@@ -235,7 +332,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     <div class="card">
       <form method="POST" action="" id="reportForm">
         <div class="form-group">
-          <label for="title">Report Title <span style="color: var(--clr-error);">*</span></label>
+          <label for="title">Report Title <span style="color: #f44336;">*</span></label>
           <input type="text" id="title" name="title" required 
                  placeholder="Enter report title (e.g., 'Progress Review', 'Initial Assessment', 'Follow-up Session')"
                  maxlength="200">
@@ -243,7 +340,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         </div>
 
         <div class="form-group">
-          <label for="summary">Summary <span style="color: var(--clr-error);">*</span></label>
+          <label for="summary">Summary <span style="color: #f44336;">*</span></label>
           <textarea id="summary" name="summary" required 
                     placeholder="Enter a brief summary of the session (2-3 sentences)"
                     maxlength="500"></textarea>
@@ -252,8 +349,8 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         </div>
 
         <div class="form-group">
-          <label for="content">Detailed Content <span style="color: var(--clr-error);">*</span></label>
-          <textarea id="content" name="content" class="large" required 
+          <label for="content">Detailed Content <span style="color: #f44336;">*</span></label>
+          <textarea id="content" name="content" rows="10" required 
                     placeholder="Enter detailed session notes, observations, interventions, and recommendations..."
                     maxlength="5000"></textarea>
           <div class="character-count" id="contentCount">0/5000</div>
@@ -270,53 +367,41 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
   <script src="../utils/js/sidebar.js"></script>
   <script>
     document.addEventListener('DOMContentLoaded', function() {
-      // Handle sidebar toggle for content padding
+      // Handle sidebar toggle
       const sidebar = document.getElementById('sidebar');
       const pageContainer = document.querySelector('.page-container');
       
       function updateContentPadding() {
         if (sidebar.classList.contains('collapsed')) {
-          pageContainer.style.paddingLeft = 'calc(var(--layout-sidebar-collapsed-width) + 20px)';
+          pageContainer.style.paddingLeft = '60px';
         } else {
-          pageContainer.style.paddingLeft = 'calc(var(--layout-sidebar-width) + 20px)';
+          pageContainer.style.paddingLeft = '220px';
         }
       }
       
-      // Initial padding
       updateContentPadding();
+      document.getElementById('sidebarToggle')?.addEventListener('click', updateContentPadding);
       
-      // Listen for sidebar toggle
-      document.getElementById('sidebarToggle')?.addEventListener('click', function() {
-        setTimeout(updateContentPadding, 300);
-      });
-      
-      // Character counter functionality
-      function setupCharacterCounter(textareaId, counterId, maxLength) {
-        const textarea = document.getElementById(textareaId);
+      // Character counters
+      function setupCounter(inputId, counterId, max) {
+        const input = document.getElementById(inputId);
         const counter = document.getElementById(counterId);
         
-        function updateCounter() {
-          const length = textarea.value.length;
-          counter.textContent = `${length}/${maxLength}`;
-          
-          // Add warning/error classes
-          counter.classList.remove('warning', 'error');
-          if (length > maxLength * 0.9) {
-            counter.classList.add('warning');
-          }
-          if (length > maxLength) {
-            counter.classList.add('error');
-          }
+        function update() {
+          const length = input.value.length;
+          counter.textContent = length + '/' + max;
+          counter.className = 'character-count';
+          if (length > max * 0.9) counter.classList.add('warning');
+          if (length > max) counter.classList.add('error');
         }
         
-        textarea.addEventListener('input', updateCounter);
-        updateCounter(); // Initial count
+        input.addEventListener('input', update);
+        update();
       }
       
-      // Setup counters for all fields
-      setupCharacterCounter('title', 'titleCount', 200);
-      setupCharacterCounter('summary', 'summaryCount', 500);
-      setupCharacterCounter('content', 'contentCount', 5000);
+      setupCounter('title', 'titleCount', 200);
+      setupCounter('summary', 'summaryCount', 500);
+      setupCounter('content', 'contentCount', 5000);
       
       // Form validation
       document.getElementById('reportForm').addEventListener('submit', function(e) {
@@ -330,31 +415,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
           return false;
         }
         
-        if (title.length > 200) {
-          e.preventDefault();
-          alert('Title must be 200 characters or less.');
-          return false;
-        }
-        
-        if (summary.length > 500) {
-          e.preventDefault();
-          alert('Summary must be 500 characters or less.');
-          return false;
-        }
-        
-        if (content.length > 5000) {
-          e.preventDefault();
-          alert('Detailed content must be 5000 characters or less.');
-          return false;
-        }
-        
-        // Confirm submission
-        if (!confirm('Are you sure you want to submit this report? Once submitted, it cannot be edited.')) {
-          e.preventDefault();
-          return false;
-        }
-        
-        return true;
+        return confirm('Are you sure you want to submit this report? Once submitted, it will be locked.');
       });
     });
   </script>
