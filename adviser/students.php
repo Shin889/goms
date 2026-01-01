@@ -103,37 +103,109 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     }
     
     if (isset($_POST['link_guardian'])) {
-    // Link guardian to student
-    $student_id = intval($_POST['student_id']);
-    $guardian_email = $_POST['guardian_email'];
-    $relationship = $_POST['relationship']; // This comes from the form
-    $primary_guardian = isset($_POST['primary_guardian']) ? 1 : 0;
-    
-    // Check if student belongs to adviser's section
-    $check = $conn->prepare("SELECT id FROM students WHERE id = ? AND section_id = ?");
-    
-    // ADD ERROR CHECKING
-    if ($check === false) {
-        error_log("Prepare failed: " . $conn->error);
-        $_SESSION['error_message'] = "Database error: " . htmlspecialchars($conn->error);
+        // Link guardian to student - MODIFIED TO USE GUARDIAN NAME
+        $student_id = intval($_POST['student_id']);
+        $guardian_id = intval($_POST['guardian_id']); // Changed from email to ID
+        $relationship = $_POST['relationship'];
+        $primary_guardian = isset($_POST['primary_guardian']) ? 1 : 0;
+        
+        // Check if student belongs to adviser's section
+        $check = $conn->prepare("SELECT id FROM students WHERE id = ? AND section_id = ?");
+        
+        if ($check === false) {
+            error_log("Prepare failed: " . $conn->error);
+            $_SESSION['error_message'] = "Database error: " . htmlspecialchars($conn->error);
+            header('Location: students.php');
+            exit;
+        }
+        
+        $check->bind_param("ii", $student_id, $adviser_info['section_id']);
+        $check->execute();
+        $check_result = $check->get_result();
+        
+        if ($check_result->num_rows > 0) {
+            // Check if guardian exists and is approved
+            $stmt = $conn->prepare("
+                SELECT g.id 
+                FROM guardians g
+                JOIN users u ON g.user_id = u.id
+                WHERE g.id = ? AND u.is_active = 1 AND u.is_approved = 1
+            ");
+            
+            if ($stmt === false) {
+                error_log("Prepare failed: " . $conn->error);
+                $_SESSION['error_message'] = "Database error: " . htmlspecialchars($conn->error);
+                header('Location: students.php');
+                exit;
+            }
+            
+            $stmt->bind_param("i", $guardian_id);
+            $stmt->execute();
+            $guardian_result = $stmt->get_result();
+            
+            if ($guardian_result->num_rows > 0) {
+                // Check if already linked
+                $check_link = $conn->prepare("
+                    SELECT id FROM student_guardians 
+                    WHERE student_id = ? AND guardian_id = ?
+                ");
+                
+                if ($check_link === false) {
+                    error_log("Prepare failed: " . $conn->error);
+                    $_SESSION['error_message'] = "Database error: " . htmlspecialchars($conn->error);
+                    header('Location: students.php');
+                    exit;
+                }
+                
+                $check_link->bind_param("ii", $student_id, $guardian_id);
+                $check_link->execute();
+                
+                if ($check_link->get_result()->num_rows == 0) {
+                    // Insert new link
+                    $stmt = $conn->prepare("
+                        INSERT INTO student_guardians 
+                        (student_id, guardian_id, relationship, primary_guardian, linked_by)
+                        VALUES (?, ?, ?, ?, ?)
+                    ");
+                    
+                    if ($stmt === false) {
+                        error_log("Prepare failed: " . $conn->error);
+                        $_SESSION['error_message'] = "Database error: " . htmlspecialchars($conn->error);
+                        header('Location: students.php');
+                        exit;
+                    }
+                    
+                    $stmt->bind_param("iissi", $student_id, $guardian_id, $relationship, $primary_guardian, $user_id);
+                    
+                    if ($stmt->execute()) {
+                        $_SESSION['success_message'] = "Guardian linked successfully!";
+                    } else {
+                        $_SESSION['error_message'] = "Error linking guardian: " . $conn->error;
+                    }
+                } else {
+                    $_SESSION['error_message'] = "This guardian is already linked to the student.";
+                }
+            } else {
+                $_SESSION['error_message'] = "Selected guardian not found or not approved.";
+            }
+        } else {
+            $_SESSION['error_message'] = "Student not found in your section.";
+        }
         header('Location: students.php');
         exit;
     }
     
-    $check->bind_param("ii", $student_id, $adviser_info['section_id']);
-    $check->execute();
-    $check_result = $check->get_result();
-    
-    if ($check_result->num_rows > 0) {
-        // Find guardian by email - REMOVED role check
+    if (isset($_POST['unlink_guardian'])) {
+        // Unlink guardian via POST
+        $student_id = intval($_POST['student_id']);
+        $guardian_id = intval($_POST['guardian_id']); // Fixed: use guardian_id
+        
         $stmt = $conn->prepare("
-            SELECT g.id 
-            FROM guardians g
-            JOIN users u ON g.user_id = u.id
-            WHERE u.email = ? AND u.is_active = 1 AND u.is_approved = 1
+            DELETE sg FROM student_guardians sg
+            JOIN students s ON sg.student_id = s.id
+            WHERE sg.student_id = ? AND sg.guardian_id = ? AND s.section_id = ?
         ");
         
-        // ADD ERROR CHECKING
         if ($stmt === false) {
             error_log("Prepare failed: " . $conn->error);
             $_SESSION['error_message'] = "Database error: " . htmlspecialchars($conn->error);
@@ -141,83 +213,12 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             exit;
         }
         
-        $stmt->bind_param("s", $guardian_email);
-        $stmt->execute();
-        $guardian_result = $stmt->get_result();
-        
-        if ($guardian_result->num_rows > 0) {
-            $guardian = $guardian_result->fetch_assoc();
-            
-            // Check if already linked
-            $check_link = $conn->prepare("
-                SELECT id FROM student_guardians 
-                WHERE student_id = ? AND guardian_id = ?
-            ");
-            
-            if ($check_link === false) {
-                error_log("Prepare failed: " . $conn->error);
-                $_SESSION['error_message'] = "Database error: " . htmlspecialchars($conn->error);
-                header('Location: students.php');
-                exit;
-            }
-            
-            $check_link->bind_param("ii", $student_id, $guardian['id']);
-            $check_link->execute();
-            
-            if ($check_link->get_result()->num_rows == 0) {
-                // Insert new link - FIXED: Now includes relationship column
-                $stmt = $conn->prepare("
-                    INSERT INTO student_guardians 
-                    (student_id, guardian_id, relationship, primary_guardian, linked_by)
-                    VALUES (?, ?, ?, ?, ?)
-                ");
-                
-                if ($stmt === false) {
-                    error_log("Prepare failed: " . $conn->error);
-                    $_SESSION['error_message'] = "Database error: " . htmlspecialchars($conn->error);
-                    header('Location: students.php');
-                    exit;
-                }
-                
-                // Line 147 - Now this should work
-                $stmt->bind_param("iissi", $student_id, $guardian['id'], $relationship, $primary_guardian, $user_id);
-                
-                if ($stmt->execute()) {
-                    $_SESSION['success_message'] = "Guardian linked successfully!";
-                } else {
-                    $_SESSION['error_message'] = "Error linking guardian: " . $conn->error;
-                }
-            } else {
-                $_SESSION['error_message'] = "Guardian is already linked to this student.";
-            }
-        } else {
-            $_SESSION['error_message'] = "No active, approved guardian found with email: " . htmlspecialchars($guardian_email);
-        }
-    } else {
-        $_SESSION['error_message'] = "Student not found in your section.";
-    }
-    header('Location: students.php');
-    exit;
-}
-    
-    if (isset($_POST['unlink_guardian'])) {
-        // Unlink guardian via POST
-        $student_id = intval($_POST['student_id']);
-        $guardian_email = $_POST['guardian_email'];
-        
-        $stmt = $conn->prepare("
-            DELETE sg FROM student_guardians sg
-            JOIN guardians g ON sg.guardian_id = g.id
-            JOIN users u ON g.user_id = u.id
-            JOIN students s ON sg.student_id = s.id
-            WHERE s.id = ? AND u.email = ? AND s.section_id = ?
-        ");
-        $stmt->bind_param("isi", $student_id, $guardian_email, $adviser_info['section_id']);
+        $stmt->bind_param("iii", $student_id, $guardian_id, $adviser_info['section_id']);
         
         if ($stmt->execute()) {
             $_SESSION['success_message'] = "Guardian unlinked successfully!";
         } else {
-            $_SESSION['error_message'] = "Error unlinking guardian.";
+            $_SESSION['error_message'] = "Error unlinking guardian: " . $conn->error;
         }
         header('Location: students.php');
         exit;
@@ -247,7 +248,29 @@ if ($_SERVER['REQUEST_METHOD'] == 'GET') {
     }
 }
 
-// Get students in adviser's section - UPDATED without complaints
+// Add AJAX handler for guardian search (place this near other GET handlers)
+if (isset($_GET['search_guardians']) && isset($_GET['query'])) {
+    $search = '%' . $_GET['query'] . '%';
+    $stmt = $conn->prepare("
+        SELECT g.id, u.full_name, u.email, u.phone
+        FROM guardians g
+        JOIN users u ON g.user_id = u.id
+        WHERE (u.full_name LIKE ? OR u.email LIKE ?) 
+        AND u.is_active = 1 AND u.is_approved = 1
+        ORDER BY u.full_name
+        LIMIT 10
+    ");
+    $stmt->bind_param("ss", $search, $search);
+    $stmt->execute();
+    $result = $stmt->get_result();
+    $guardians = $result->fetch_all(MYSQLI_ASSOC);
+    
+    header('Content-Type: application/json');
+    echo json_encode($guardians);
+    exit;
+}
+
+// Get students in adviser's section - UPDATED to include guardian IDs
 $students = [];
 if ($adviser_info) {
     $stmt = $conn->prepare("
@@ -266,7 +289,7 @@ if ($adviser_info) {
                 WHERE r.student_id = s.id AND r.adviser_id = ?
             ) as last_referral_date,
             GROUP_CONCAT(
-                CONCAT(g.relationship, ': ', u.full_name, ' (', u.email, ')') 
+                CONCAT(g.id, '||', g.relationship, ': ', u.full_name, ' (', u.email, ')') 
                 SEPARATOR ';;'
             ) as guardians_info
         FROM students s
@@ -301,31 +324,41 @@ if (isset($_GET['export']) && $_GET['export'] == 'csv' && !empty($students)) {
     
     // Add CSV headers
     fputcsv($output, [
-    'Student ID', 'First Name', 'Last Name', 'Middle Name',
-    'Gender', 'Date of Birth', 'Contact Number', 'Status',
-    'Guardians', 'Referral Count', 'Last Referral'
-]);
-
+        'Student ID', 'First Name', 'Last Name', 'Middle Name',
+        'Gender', 'Date of Birth', 'Contact Number', 'Status',
+        'Guardians', 'Referral Count', 'Last Referral'
+    ]);
     
     // Update data in loop
-foreach ($students as $student) {
-    $guardians_list = !empty($student['guardians_info']) ? 
-        str_replace(';;', ', ', $student['guardians_info']) : 'None';
-    
-    fputcsv($output, [
-        $student['student_id'],
-        $student['first_name'],
-        $student['last_name'],
-        $student['middle_name'] ?? '',
-        $student['gender'] ?? '',
-        $student['dob'] ? date('m/d/Y', strtotime($student['dob'])) : '',
-        $student['contact_number'] ?? '',
-        $student['status'],
-        $guardians_list,
-        $student['referral_count'],
-        $student['last_referral_date'] ? date('m/d/Y', strtotime($student['last_referral_date'])) : ''
-    ]);
-}
+    foreach ($students as $student) {
+        // Clean guardians info for CSV export
+        $guardians_list = 'None';
+        if (!empty($student['guardians_info'])) {
+            $guardian_entries = explode(';;', $student['guardians_info']);
+            $clean_entries = [];
+            foreach ($guardian_entries as $entry) {
+                $parts = explode('||', $entry);
+                if (count($parts) > 1) {
+                    $clean_entries[] = $parts[1]; // Get the guardian details without ID
+                }
+            }
+            $guardians_list = implode(', ', $clean_entries);
+        }
+        
+        fputcsv($output, [
+            $student['student_id'],
+            $student['first_name'],
+            $student['last_name'],
+            $student['middle_name'] ?? '',
+            $student['gender'] ?? '',
+            $student['dob'] ? date('m/d/Y', strtotime($student['dob'])) : '',
+            $student['contact_number'] ?? '',
+            $student['status'],
+            $guardians_list,
+            $student['referral_count'],
+            $student['last_referral_date'] ? date('m/d/Y', strtotime($student['last_referral_date'])) : ''
+        ]);
+    }
     
     fclose($output);
     exit;
@@ -378,16 +411,7 @@ $guardians = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
             <span class="icon"><i class="fas fa-users"></i></span>
             <span class="label">My Students</span>
         </a>
-<!--         
-        <a href="create_complaint.php" class="nav-link">
-            <span class="icon"><i class="fas fa-plus-circle"></i></span>
-            <span class="label">Create Complaint</span>
-        </a>
         
-        <a href="complaints.php" class="nav-link">
-            <span class="icon"><i class="fas fa-clipboard-list"></i></span>
-            <span class="label">View Complaints</span>
-        </a> -->
         <a href="create_referral.php" class="nav-link">
             <span class="icon"><i class="fas fa-plus-circle"></i></span>
             <span class="label">Create Referral</span>
@@ -445,37 +469,36 @@ $guardians = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
 
             <!-- Summary Stats -->
             <?php if (!empty($students)): ?>
-               <div class="summary-stats">
-    <div class="stat-item">
-        <div class="stat-number"><?= count($students) ?></div>
-        <div class="stat-label">Total Students</div>
-    </div>
-    <div class="stat-item">
-        <?php
-        $active_students = count(array_filter($students, function($s) {
-            return $s['status'] === 'active';
-        }));
-        ?>
-        <div class="stat-number"><?= $active_students ?></div>
-        <div class="stat-label">Active Students</div>
-    </div>
-    <div class="stat-item">
-        <?php
-        $total_referrals = array_sum(array_column($students, 'referral_count'));
-        ?>
-        <div class="stat-number"><?= $total_referrals ?></div>
-        <div class="stat-label">Total Referrals</div>
-    </div>
-    <div class="stat-item">
-        <?php
-        $students_with_guardians = count(array_filter($students, function($s) {
-            return !empty($s['guardians_info']);
-        }));
-        ?>
-        <div class="stat-number"><?= $students_with_guardians ?></div>
-        <div class="stat-label">With Guardians</div>
-    </div>
-
+                <div class="summary-stats">
+                    <div class="stat-item">
+                        <div class="stat-number"><?= count($students) ?></div>
+                        <div class="stat-label">Total Students</div>
+                    </div>
+                    <div class="stat-item">
+                        <?php
+                        $active_students = count(array_filter($students, function($s) {
+                            return $s['status'] === 'active';
+                        }));
+                        ?>
+                        <div class="stat-number"><?= $active_students ?></div>
+                        <div class="stat-label">Active Students</div>
+                    </div>
+                    <div class="stat-item">
+                        <?php
+                        $total_referrals = array_sum(array_column($students, 'referral_count'));
+                        ?>
+                        <div class="stat-number"><?= $total_referrals ?></div>
+                        <div class="stat-label">Total Referrals</div>
+                    </div>
+                    <div class="stat-item">
+                        <?php
+                        $students_with_guardians = count(array_filter($students, function($s) {
+                            return !empty($s['guardians_info']);
+                        }));
+                        ?>
+                        <div class="stat-number"><?= $students_with_guardians ?></div>
+                        <div class="stat-label">With Guardians</div>
+                    </div>
                 </div>
             <?php endif; ?>
 
@@ -542,7 +565,11 @@ $guardians = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
                                         <i class="fas fa-user-shield"></i> Linked Guardians:
                                     </div>
                                     <?php foreach ($guardians_list as $guardian_info): 
-                                        list($relationship, $guardian_full) = explode(': ', $guardian_info, 2);
+                                        $parts = explode('||', $guardian_info);
+                                        $guardian_id = $parts[0];
+                                        $guardian_details = $parts[1];
+                                        
+                                        list($relationship, $guardian_full) = explode(': ', $guardian_details, 2);
                                         list($guardian_name, $guardian_email) = explode(' (', $guardian_full);
                                         $guardian_email = rtrim($guardian_email, ')');
                                     ?>
@@ -554,7 +581,7 @@ $guardians = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
                                             </div>
                                             <form method="POST" action="" style="display: inline;">
                                                 <input type="hidden" name="student_id" value="<?= $student['id'] ?>">
-                                                <input type="hidden" name="guardian_email" value="<?= htmlspecialchars($guardian_email) ?>">
+                                                <input type="hidden" name="guardian_id" value="<?= $guardian_id ?>">
                                                 <button type="submit" name="unlink_guardian" class="unlink-btn" onclick="return confirm('Are you sure you want to unlink <?= htmlspecialchars($guardian_name) ?> from this student?')">
                                                     <i class="fas fa-unlink"></i> Unlink
                                                 </button>
@@ -570,31 +597,31 @@ $guardians = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
                                 </div>
                             <?php endif; ?>
                             
-                           <?php if ($student['referral_count'] > 0): ?>
-    <div class="referral-info">
-        <div class="referral-count">
-            <i class="fas fa-paper-plane"></i> 
-            <?= $student['referral_count'] ?> referral(s)
-        </div>
-        <?php if ($student['last_referral_date']): ?>
-            <div class="last-referral">
-                Last referral: <?= date('M d, Y', strtotime($student['last_referral_date'])) ?>
-            </div>
-        <?php endif; ?>
-    </div>
-<?php else: ?>
-    <div class="referral-info" style="border-left-color: var(--clr-success); background: var(--clr-success-light);">
-        <div class="referral-count" style="color: var(--clr-success);">
-            <i class="fas fa-check-circle"></i> No referrals
-        </div>
-        <div class="last-referral">
-            No referrals made
-        </div>
-    </div>
-<?php endif; ?>
+                            <?php if ($student['referral_count'] > 0): ?>
+                                <div class="referral-info">
+                                    <div class="referral-count">
+                                        <i class="fas fa-paper-plane"></i> 
+                                        <?= $student['referral_count'] ?> referral(s)
+                                    </div>
+                                    <?php if ($student['last_referral_date']): ?>
+                                        <div class="last-referral">
+                                            Last referral: <?= date('M d, Y', strtotime($student['last_referral_date'])) ?>
+                                        </div>
+                                    <?php endif; ?>
+                                </div>
+                            <?php else: ?>
+                                <div class="referral-info" style="border-left-color: var(--clr-success); background: var(--clr-success-light);">
+                                    <div class="referral-count" style="color: var(--clr-success);">
+                                        <i class="fas fa-check-circle"></i> No referrals
+                                    </div>
+                                    <div class="last-referral">
+                                        No referrals made
+                                    </div>
+                                </div>
+                            <?php endif; ?>
                             
                             <div class="action-buttons">
-                                <button class="btn-small btn-primary" onclick="openLinkGuardianModal(<?= $student['id'] ?>, '<?= htmlspecialchars($student['first_name'] . ' ' . $student['last_name']) ?>')">
+                                <button class="btn-small btn-primary" onclick="openLinkGuardianModal(<?= $student['id'] ?>, '<?= addslashes(htmlspecialchars($student['first_name'] . ' ' . $student['last_name'])) ?>')">
                                     <i class="fas fa-link"></i> Link Guardian
                                 </button>
                                 <button class="btn-small btn-secondary" onclick="openEditStudentModal(<?= htmlspecialchars(json_encode($student)) ?>)">
@@ -760,6 +787,7 @@ $guardians = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
             </div>
             <form method="POST" action="">
                 <input type="hidden" name="student_id" id="link_student_id">
+                <input type="hidden" name="guardian_id" id="selected_guardian_id">
                 
                 <div class="form-group">
                     <label class="form-label">Student</label>
@@ -767,12 +795,45 @@ $guardians = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
                 </div>
                 
                 <div class="form-group">
-                    <label class="form-label">Guardian Email *</label>
-                    <input type="email" name="guardian_email" class="form-control" required 
-                           placeholder="Enter guardian's registered email">
-                    <small style="color: var(--clr-muted); font-size: 0.85em;">
-                        Guardian must be registered and approved in the system.
-                    </small>
+                    <label class="form-label">Search Guardian by Name *</label>
+                    <div style="position: relative;">
+                        <input type="text" id="guardian_search" class="form-control" 
+                               placeholder="Start typing guardian name..." 
+                               autocomplete="off" style="width: 100%;">
+                        <div id="search_results" style="
+                            position: absolute;
+                            top: 100%;
+                            left: 0;
+                            right: 0;
+                            background: white;
+                            border: 1px solid #ddd;
+                            border-radius: 4px;
+                            max-height: 200px;
+                            overflow-y: auto;
+                            z-index: 1000;
+                            display: none;
+                        "></div>
+                    </div>
+                    <div id="selected_guardian_info" style="
+                        margin-top: 10px;
+                        padding: 10px;
+                        border: 1px solid var(--clr-primary);
+                        border-radius: 4px;
+                        background: var(--clr-primary-light);
+                        display: none;
+                    ">
+                        <strong>Selected Guardian:</strong> 
+                        <span id="selected_guardian_name"></span>
+                        <button type="button" onclick="clearGuardianSelection()" style="
+                            float: right;
+                            background: none;
+                            border: none;
+                            color: var(--clr-danger);
+                            cursor: pointer;
+                        ">
+                            <i class="fas fa-times"></i> Clear
+                        </button>
+                    </div>
                 </div>
                 
                 <div class="form-row">
@@ -801,12 +862,14 @@ $guardians = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
                 
                 <div class="form-actions">
                     <button type="button" class="btn btn-secondary" onclick="closeModal('linkGuardianModal')">Cancel</button>
-                    <button type="submit" name="link_guardian" class="btn btn-primary">Link Guardian</button>
+                    <button type="submit" name="link_guardian" class="btn btn-primary" id="link_guardian_btn" disabled>
+                        <i class="fas fa-link"></i> Link Guardian
+                    </button>
                 </div>
             </form>
         </div>
     </div>
-
+    
     <script src="../utils/js/sidebar.js"></script>
     <script>
         // Modal Functions
@@ -833,6 +896,9 @@ $guardians = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
             document.getElementById('link_student_id').value = studentId;
             document.getElementById('link_student_name').value = studentName;
             document.getElementById('linkGuardianModal').style.display = 'block';
+            
+            // Clear previous selections
+            clearGuardianSelection();
         }
         
         function closeModal(modalId) {
@@ -872,8 +938,35 @@ $guardians = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
             });
         };
         
-        // Initialize active nav link
+        // Guardian search functionality
+        let searchTimeout;
+        let lastSearchTerm = '';
+        
+        function clearGuardianSelection() {
+            document.getElementById('selected_guardian_id').value = '';
+            document.getElementById('selected_guardian_name').textContent = '';
+            document.getElementById('selected_guardian_info').style.display = 'none';
+            document.getElementById('guardian_search').value = '';
+            document.getElementById('link_guardian_btn').disabled = true;
+            document.getElementById('search_results').style.display = 'none';
+            document.getElementById('search_results').innerHTML = '';
+        }
+        
+        function selectGuardian(guardianId, guardianName, guardianEmail, guardianPhone) {
+            document.getElementById('selected_guardian_id').value = guardianId;
+            let displayText = `${guardianName} (${guardianEmail})`;
+            if (guardianPhone) {
+                displayText += ` - ${guardianPhone}`;
+            }
+            document.getElementById('selected_guardian_name').textContent = displayText;
+            document.getElementById('selected_guardian_info').style.display = 'block';
+            document.getElementById('link_guardian_btn').disabled = false;
+            document.getElementById('search_results').style.display = 'none';
+        }
+        
+        // Initialize
         document.addEventListener('DOMContentLoaded', function() {
+            // Initialize active nav link
             const currentPage = window.location.pathname.split('/').pop();
             const navLinks = document.querySelectorAll('.nav-link');
             
@@ -885,6 +978,70 @@ $guardians = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
                     link.classList.remove('active');
                 }
             });
+            
+            // Guardian search event listener
+            const searchInput = document.getElementById('guardian_search');
+            const searchResults = document.getElementById('search_results');
+            
+            if (searchInput) {
+                searchInput.addEventListener('input', function() {
+                    clearTimeout(searchTimeout);
+                    const query = this.value.trim();
+                    
+                    if (query.length < 2 || query === lastSearchTerm) {
+                        searchResults.style.display = 'none';
+                        return;
+                    }
+                    
+                    lastSearchTerm = query;
+                    searchTimeout = setTimeout(() => {
+                        fetch(`?search_guardians=1&query=${encodeURIComponent(query)}`)
+                            .then(response => response.json())
+                            .then(data => {
+                                searchResults.innerHTML = '';
+                                
+                                if (data.length === 0) {
+                                    searchResults.innerHTML = '<div style="padding: 10px; color: var(--clr-muted);">No guardians found</div>';
+                                } else {
+                                    data.forEach(guardian => {
+                                        const div = document.createElement('div');
+                                        div.style.cssText = 'padding: 10px; cursor: pointer; border-bottom: 1px solid #eee;';
+                                        div.innerHTML = `
+                                            <div style="font-weight: 600;">${guardian.full_name}</div>
+                                            <div style="font-size: 0.9em; color: var(--clr-muted);">
+                                                Email: ${guardian.email}<br>
+                                                ${guardian.phone ? `Phone: ${guardian.phone}` : ''}
+                                            </div>
+                                        `;
+                                        div.addEventListener('click', () => {
+                                            selectGuardian(guardian.id, guardian.full_name, guardian.email, guardian.phone);
+                                        });
+                                        div.addEventListener('mouseenter', () => {
+                                            div.style.backgroundColor = '#f5f5f5';
+                                        });
+                                        div.addEventListener('mouseleave', () => {
+                                            div.style.backgroundColor = '';
+                                        });
+                                        searchResults.appendChild(div);
+                                    });
+                                }
+                                searchResults.style.display = 'block';
+                            })
+                            .catch(error => {
+                                console.error('Error:', error);
+                                searchResults.innerHTML = '<div style="padding: 10px; color: var(--clr-danger);">Error loading results</div>';
+                                searchResults.style.display = 'block';
+                            });
+                    }, 300);
+                });
+                
+                // Close search results when clicking outside
+                document.addEventListener('click', function(e) {
+                    if (!searchInput.contains(e.target) && !searchResults.contains(e.target)) {
+                        searchResults.style.display = 'none';
+                    }
+                });
+            }
         });
     </script>
 </body>

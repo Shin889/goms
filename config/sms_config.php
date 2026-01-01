@@ -1,14 +1,14 @@
 <?php
+// PhilSMS API Configuration
+define('PHILSMS_API_KEY', '815|tpwc8LfPn1tE3WjdiDih1eezOp0nczuz4Oc93jSM5c75922a');
+define('PHILSMS_SMS_ENDPOINT', 'https://dashboard.philsms.com/api/v3/sms/send');
 
-// iTexMo SMS API Configuration 
-define('ITEXMO_API_CODE', 'TR-KARYL474085_4NVX5'); 
-define('ITEXMO_API_PASSWORD', 'm67r]s6fqy'); // 
-define('ITEXMO_API_URL', 'https://www.itexmo.com/php_api/api.php');
+// SMS Settings
+define('SMS_ENABLED', true);
+define('SMS_TEST_MODE', false); // Set to true initially for testing
+define('SMS_SENDER_ID', 'GOMS'); // Sender ID for SMS
 
-// Alternative SMS provider configurations 
-define('SMS_ENABLED', true); 
-define('SMS_TEST_MODE', true); 
-
+// SMS Templates
 define('SMS_BOOKING_TEMPLATE', 'GOMS: Appointment booked for [StudentName] with Counselor [CounselorName] on [Date] at [Time]. Case: [BriefConcern]. Reply STOP to opt out.');
 define('SMS_RESCHEDULE_TEMPLATE', 'GOMS: Appointment for [StudentName] rescheduled to [Date] at [Time].');
 define('SMS_CANCELLATION_TEMPLATE', 'GOMS: Appointment for [StudentName] on [Date] at [Time] has been cancelled.');
