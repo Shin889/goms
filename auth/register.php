@@ -143,27 +143,14 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="stylesheet" href="../utils/css/root.css"> 
     <link rel="stylesheet" href="../utils/css/register.css"> 
-    <style>
-        .level-select-wrapper {
-            display: none;
-            margin-bottom: 15px;
-        }
-        
-        .level-select-wrapper.visible {
-            display: block;
-            animation: fadeIn 0.3s ease-in;
-        }
-        
-        @keyframes fadeIn {
-            from { opacity: 0; transform: translateY(-10px); }
-            to { opacity: 1; transform: translateY(0); }
-        }
-    </style>
 </head>
 <body>
     <div class="register-container">
-        <img src="../utils/images/cnhslogo.png" alt="CNHS Logo" class="logo-img" style="max-width: 80px; height: auto; margin-bottom: 15px;">
-
+        <div class="logos-container">
+            <img src="../utils/images/cnhslogo.png" alt="CNHS Logo" class="logo-img">
+            <img src="../utils/images/goms_logo.png" alt="GOMS Logo" class="logo-img">
+        </div>
+        
         <h2>Create an Account</h2>
         
         <?php if (!empty($success_message)): ?>

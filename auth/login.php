@@ -74,8 +74,10 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
 </head>
 <body>
   <div class="login-container">
-    <img src="../utils/images/cnhslogo.png" alt="CNHS Logo" class="logo-img">
-
+    <div class="logos-container">
+        <img src="../utils/images/cnhslogo.png" alt="CNHS Logo" class="logo-img">
+        <img src="../utils/images/goms_logo.png" alt="GOMS Logo" class="logo-img">
+    </div>
     <h2>Login to GOMS</h2>
     
     <?php if ($error_message): ?>

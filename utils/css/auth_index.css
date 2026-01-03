@@ -26,10 +26,18 @@
             border-color: var(--clr-primary);
         }
 
+        .logos-container {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+
         .logo-img {
             max-width: 80px;
             height: auto;
-            margin-bottom: 15px;
+            object-fit: contain;
         }
 
         h1 {

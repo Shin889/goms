@@ -34,8 +34,10 @@ if (isset($_SESSION['role'])) {
 </head>
 <body>
     <div class="container">
-        <img src="../utils/images/cnhslogo.png" alt="CNHS Logo" class="logo-img">
-        
+        <div class="logos-container">
+            <img src="../utils/images/cnhslogo.png" alt="CNHS Logo" class="logo-img">
+            <img src="../utils/images/goms_logo.png" alt="GOMS Logo" class="logo-img">
+        </div>
         <?php if (isset($_GET['error']) && $_GET['error'] == 'account_not_approved'): ?>
             <div class="error-message">
                 <i class="fas fa-exclamation-circle"></i>
