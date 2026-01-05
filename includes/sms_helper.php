@@ -4,9 +4,14 @@ require_once __DIR__.'/../config/db.php';
 
 function sendSMS($user_id, $phone, $message) {
     global $conn;
+
+    error_log("sendSMS called with original phone: $phone");
     
     // Clean phone number
     $phone = cleanPhoneNumber($phone);
+
+    error_log("sendSMS cleaned phone: $phone");
+    
     if (!$phone) {
         logSMS($user_id, $phone, $message, 'failed', 'Invalid phone number format');
         return false;
@@ -41,138 +46,133 @@ function sendSMSViaPhilSMS($phone, $message) {
         ];
     }
     
-    // Prepare data for PhilSMS API
-    // Try different parameter combinations based on common SMS API patterns
-    $data_attempts = [
-        // Attempt 1: Most common format
-        [
-            'recipient' => $phone,
-            'message' => $message,
-            'sender_id' => defined('SMS_SENDER_ID') ? SMS_SENDER_ID : 'GOMS'
-        ],
-        // Attempt 2: Alternative format
-        [
-            'to' => $phone,
-            'text' => $message,
-            'from' => defined('SMS_SENDER_ID') ? SMS_SENDER_ID : 'GOMS'
-        ],
-        // Attempt 3: Simple format
-        [
-            'phone' => $phone,
-            'message' => $message
-        ]
-    ];
+    // Log the attempt
+    error_log("Attempting to send SMS to: " . substr($phone, 0, 3) . "****" . substr($phone, -3));
+    error_log("Message preview: " . substr($message, 0, 50) . "...");
     
+    // Prepare data for PhilSMS API
+    $data = [
+        'recipient' => $phone,  
+        'message' => $message,
+        'type' => 'plain'
+    ];
+
+    // Add sender_id - MUST BE "PhilSMS" if required
+    if (defined('SMS_SENDER_ID') && SMS_SENDER_ID) {
+        $data['sender_id'] = SMS_SENDER_ID;
+        error_log("Using sender_id: " . SMS_SENDER_ID);
+    } else {
+        error_log("No sender_id defined, using default");
+    }
+
     $headers = [
         'Accept: application/json',
         'Content-Type: application/json',
         'Authorization: Bearer ' . PHILSMS_API_KEY
     ];
+
+    $ch = curl_init(PHILSMS_SMS_ENDPOINT);
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_POST, true);
+    curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($data));
+    curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
+    curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+    curl_setopt($ch, CURLOPT_TIMEOUT, 30);
+
+    $response = curl_exec($ch);
+    $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $curlError = curl_error($ch);
+    curl_close($ch);
+
+    // Log full response for debugging
+    error_log("PhilSMS Response - HTTP Code: $httpCode");
+    error_log("PhilSMS Response Body: " . $response);
     
-    foreach ($data_attempts as $attempt => $data) {
-        error_log("PhilSMS Attempt #" . ($attempt + 1) . " with data: " . json_encode($data));
-        
-        $ch = curl_init(PHILSMS_SMS_ENDPOINT);
-        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-        curl_setopt($ch, CURLOPT_POST, true);
-        curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($data));
-        curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
-        curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
-        curl_setopt($ch, CURLOPT_TIMEOUT, 30);
-        curl_setopt($ch, CURLOPT_HEADER, true); // Get headers
-        
-        $response = curl_exec($ch);
-        $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-        $curlError = curl_error($ch);
-        curl_close($ch);
-        
-        // Parse response
-        $header_size = curl_getinfo($ch, CURLINFO_HEADER_SIZE);
-        $response_headers = substr($response, 0, $header_size);
-        $response_body = substr($response, $header_size);
-        
-        error_log("PhilSMS Attempt #" . ($attempt + 1) . " - HTTP Code: $httpCode");
-        error_log("PhilSMS Attempt #" . ($attempt + 1) . " - Response: " . $response_body);
-        
-        if ($curlError) {
-            error_log("PhilSMS Attempt #" . ($attempt + 1) . " - CURL Error: $curlError");
-            continue; // Try next data format
+    if ($curlError) {
+        error_log("CURL Error: $curlError");
+        return [
+            'success' => false,
+            'status' => 'failed',
+            'provider_msg' => "CURL Error: $curlError"
+        ];
+    }
+    
+    $responseData = json_decode($response, true);
+    
+    // Check for success
+    if ($httpCode == 200 || $httpCode == 201) {
+        // Multiple success formats
+        if (isset($responseData['status']) && $responseData['status'] === 'success') {
+            $msg_id = isset($responseData['data']['message_id']) ? $responseData['data']['message_id'] : 
+                     (isset($responseData['message_id']) ? $responseData['message_id'] : 'unknown');
+            error_log("SMS sent successfully! Message ID: $msg_id");
+            return [
+                'success' => true,
+                'status' => 'sent',
+                'provider_msg' => $msg_id
+            ];
         }
-        
-        $responseData = json_decode($response_body, true);
-        
-        if ($httpCode == 200 || $httpCode == 201) {
-            // Check various success response formats
-            if (isset($responseData['status']) && $responseData['status'] === 'success') {
-                return [
-                    'success' => true,
-                    'status' => 'sent',
-                    'provider_msg' => isset($responseData['data']['message_id']) ? 
-                                     $responseData['data']['message_id'] : 
-                                     'Sent via PhilSMS'
-                ];
-            }
-            // Alternative success format
-            elseif (isset($responseData['success']) && $responseData['success'] === true) {
-                return [
-                    'success' => true,
-                    'status' => 'sent',
-                    'provider_msg' => isset($responseData['message_id']) ? 
-                                     $responseData['message_id'] : 
-                                     'Sent via PhilSMS'
-                ];
-            }
-        }
-        
-        // If we got a specific error message, log it
-        if (isset($responseData['message'])) {
-            error_log("PhilSMS Error: " . $responseData['message']);
-        }
-        
-        // Wait a bit before next attempt
-        if ($attempt < count($data_attempts) - 1) {
-            usleep(100000); // 100ms delay
+        elseif (isset($responseData['success']) && $responseData['success'] === true) {
+            $msg_id = isset($responseData['message_id']) ? $responseData['message_id'] : 'unknown';
+            error_log("SMS sent successfully! Message ID: $msg_id");
+            return [
+                'success' => true,
+                'status' => 'sent',
+                'provider_msg' => $msg_id
+            ];
         }
     }
     
-    // If all attempts failed
+    // Handle errors
+    $errorMsg = "Unknown error";
+    if (isset($responseData['message'])) {
+        $errorMsg = $responseData['message'];
+    } elseif (isset($responseData['error'])) {
+        $errorMsg = $responseData['error'];
+    }
+    
+    error_log("SMS failed: HTTP $httpCode - $errorMsg");
     return [
         'success' => false,
         'status' => 'failed',
-        'provider_msg' => "All attempts failed. Last HTTP Code: $httpCode"
+        'provider_msg' => "HTTP $httpCode: $errorMsg"
     ];
 }
 
 function cleanPhoneNumber($phone) {
-    // Remove all non-numeric characters except plus sign
-    $phone = preg_replace('/[^0-9+]/', '', $phone);
+    // Remove all non-numeric characters
+    $phone = preg_replace('/[^0-9]/', '', $phone);
     
-    // Convert to international format for PhilSMS
-    // Philippine numbers: 09171234567 -> +639171234567
-    
-    // If starts with 09, convert to +639
-    if (preg_match('/^09(\d{9})$/', $phone, $matches)) {
-        return '+639' . $matches[1];
+    // Check if phone number is valid Philippine format
+    if (strlen($phone) < 10 || strlen($phone) > 13) {
+        return false;
     }
     
-    // If starts with 9 and 10 digits, add +63
-    if (preg_match('/^9(\d{9})$/', $phone, $matches)) {
-        return '+639' . $matches[1];
+    // PhilSMS requires: 639158386852 format (NOT 0915...)
+    
+    // If starts with 0 (09158386852), remove 0 and add 63
+    if (strlen($phone) === 11 && substr($phone, 0, 1) === '0') {
+        return '63' . substr($phone, 1);  // Converts 09158386852 → 639158386852
     }
     
-    // If starts with +63, keep as is
-    if (preg_match('/^\+63\d{10}$/', $phone)) {
+    // If starts with 63 (639158386852), keep as is
+    if (strlen($phone) === 12 && substr($phone, 0, 2) === '63') {
         return $phone;
     }
     
-    // If 10 digits without +, assume Philippine number
-    if (preg_match('/^(\d{10})$/', $phone, $matches)) {
-        return '+63' . $matches[1];
+    // If 10 digits starting with 9 (9158386852), add 63
+    if (strlen($phone) === 10 && substr($phone, 0, 1) === '9') {
+        return '63' . $phone;  // Converts 9158386852 → 639158386852
     }
     
-    // If already in +639 format
-    if (preg_match('/^\+639\d{9}$/', $phone)) {
-        return $phone;
+    // If 13 digits (+639158386852 with + removed), remove + (already done)
+    if (strlen($phone) === 13 && substr($phone, 0, 2) === '63') {
+        return $phone;  // Already 639158386852
+    }
+    
+    // If 12 digits but starts with 9 (unlikely), add 63
+    if (strlen($phone) === 12 && substr($phone, 0, 1) === '9') {
+        return '63' . $phone;
     }
     
     return false;
@@ -336,7 +336,8 @@ function sendAppointmentReminders() {
     return ['24h' => $sent_24h, '1h' => $sent_1h];
 }
 
-// New function to send appointment notifications with templates
+// REMOVE OR COMMENT OUT THIS DUPLICATE FUNCTION - It exists in functions.php
+/*
 function sendAppointmentNotification($appointment_id, $notification_type) {
     global $conn;
     
@@ -403,5 +404,29 @@ function sendAppointmentNotification($appointment_id, $notification_type) {
     }
     
     return false;
+}
+*/
+
+// Function to send SMS with retry mechanism
+function sendSMSWithRetry($user_id, $phone, $message, $max_retries = 2) {
+    $attempts = 0;
+    $result = false;
+    
+    while ($attempts <= $max_retries && !$result) {
+        $attempts++;
+        
+        if ($attempts > 1) {
+            error_log("Retry attempt $attempts for SMS to $phone");
+            sleep(1); // Wait 1 second between retries
+        }
+        
+        $result = sendSMS($user_id, $phone, $message);
+        
+        if (!$result) {
+            error_log("SMS attempt $attempts failed");
+        }
+    }
+    
+    return $result;
 }
 ?>

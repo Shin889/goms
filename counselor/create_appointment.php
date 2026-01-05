@@ -163,64 +163,87 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                     $counselor_id
                 );
                 
-                if ($stmt->execute()) {
-                    $appointment_id = $conn->insert_id;
+if ($stmt->execute()) {
+    $appointment_id = $conn->insert_id;
+    
+    // Log the action
+    logAction($counselor_id, 'Create Appointment', 'appointments', $appointment_id, "From referral #$referral_id");
+    
+    // Update referral status
+    $update_stmt = $conn->prepare("UPDATE referrals SET status = 'scheduled', updated_at = NOW() WHERE id = ?");
+    $update_stmt->bind_param("i", $referral_id);
+    $update_stmt->execute();
+    $update_stmt->close();
+    
+    // Check if guardian table exists before trying to send SMS
+    // First, let's check if the student_guardians table exists
+    $check_table = $conn->query("SHOW TABLES LIKE 'student_guardians'");
+    
+    if ($check_table && $check_table->num_rows > 0) {
+        // Table exists, try to get guardian info
+        $guardian_stmt = $conn->prepare("
+            SELECT u.phone  // CORRECT - get phone from users table
+            FROM student_guardians sg 
+            JOIN guardians g ON sg.guardian_id = g.id 
+            JOIN users u ON g.user_id = u.id  // JOIN with users
+            WHERE sg.student_id = ? 
+            ORDER BY sg.primary_guardian DESC, sg.id ASC 
+            LIMIT 1
+        ");
+        
+        if ($guardian_stmt) {
+            $guardian_stmt->bind_param("i", $student_id);
+            $guardian_stmt->execute();
+            $guardian_result = $guardian_stmt->get_result();
+            $guardian = $guardian_result->fetch_assoc();
+            $guardian_stmt->close();
+            
+            if ($guardian && !empty($guardian['phone'])) {
+                // Use the SMS template instead of hardcoded message
+                $student_name = $ref['first_name'] . ' ' . $ref['last_name'];
+                $formatted_date = date("F j, Y", strtotime($start));
+                $formatted_time = date("g:i A", strtotime($start));
+                
+                // Build message using template
+                $message = str_replace(
+                    ['[StudentName]', '[CounselorName]', '[Date]', '[Time]', '[BriefConcern]'],
+                    [$student_name, $counselor['full_name'], $formatted_date, $formatted_time, substr($ref['issue_description'], 0, 50)],
+                    SMS_BOOKING_TEMPLATE
+                );
+                
+                // Check if sendSMS function exists
+                if (function_exists('sendSMS')) {
+                    // Log before sending for debugging
+                    error_log("Attempting to send SMS to: " . $guardian['phone']);
+                    error_log("Message: " . $message);
                     
-                    // Log the action
-                    logAction($counselor_id, 'Create Appointment', 'appointments', $appointment_id, "From referral #$referral_id");
+                    $result = sendSMS($counselor_id, $guardian['phone'], $message);
                     
-                    // Update referral status
-                    $update_stmt = $conn->prepare("UPDATE referrals SET status = 'scheduled', updated_at = NOW() WHERE id = ?");
-                    $update_stmt->bind_param("i", $referral_id);
-                    $update_stmt->execute();
-                    $update_stmt->close();
-                    
-                    // Check if guardian table exists before trying to send SMS
-                    // First, let's check if the student_guardians table exists
-                    $check_table = $conn->query("SHOW TABLES LIKE 'student_guardians'");
-                    
-                    if ($check_table && $check_table->num_rows > 0) {
-                        // Table exists, try to get guardian info
-                        $guardian_stmt = $conn->prepare("
-                            SELECT g.phone 
-                            FROM student_guardians sg 
-                            JOIN guardians g ON sg.guardian_id = g.id 
-                            WHERE sg.student_id = ? AND sg.primary_guardian = 1
-                            LIMIT 1
-                        ");
-                        
-                        if ($guardian_stmt) {
-                            $guardian_stmt->bind_param("i", $student_id);
-                            $guardian_stmt->execute();
-                            $guardian_result = $guardian_stmt->get_result();
-                            $guardian = $guardian_result->fetch_assoc();
-                            $guardian_stmt->close();
-                            
-                            if ($guardian && !empty($guardian['phone'])) {
-                                $formatted_date = date("F j, Y \a\\t g:i A", strtotime($start));
-                                $msg = "GOMS: Your child " . $ref['first_name'] . " " . $ref['last_name'] . " has a counseling appointment scheduled on $formatted_date. Mode: $mode.";
-                                
-                                // Check if sendSMS function exists
-                                if (function_exists('sendSMS')) {
-                                    sendSMS($counselor_id, $guardian['phone'], $msg);
-                                } else {
-                                    error_log("sendSMS function not found");
-                                }
-                            }
-                        } else {
-                            error_log("Failed to prepare guardian statement: " . $conn->error);
-                        }
+                    if ($result) {
+                        error_log("SMS sent successfully");
                     } else {
-                        error_log("student_guardians table does not exist");
+                        error_log("SMS sending failed");
                     }
-                    
-                    $_SESSION['success'] = "Appointment created successfully!";
-                    header("Location: appointments.php");
-                    exit;
                 } else {
-                    $error = "Error creating appointment: " . $stmt->error;
-                    error_log("Execute error: " . $stmt->error);
+                    error_log("sendSMS function not found");
                 }
+            } else {
+                error_log("No guardian found or phone is empty for student ID: " . $student_id);
+            }
+        } else {
+            error_log("Failed to prepare guardian statement: " . $conn->error);
+        }
+    } else {
+        error_log("student_guardians table does not exist");
+    }
+    
+    $_SESSION['success'] = "Appointment created successfully!";
+    header("Location: appointments.php");
+    exit;
+} else {
+    $error = "Error creating appointment: " . $stmt->error;
+    error_log("Execute error: " . $stmt->error);
+}
                 $stmt->close();
             }
         }

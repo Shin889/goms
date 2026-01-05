@@ -54,6 +54,7 @@ function generateAppointmentCode() {
 }
 
 // Function to send notifications to both guardian and adviser
+// Function to send notifications to both guardian and adviser
 function sendAppointmentNotification($appointment_id, $event_type) {
     global $conn;
     
@@ -82,7 +83,7 @@ function sendAppointmentNotification($appointment_id, $event_type) {
     
     if (!$appointment) return false;
     
-    // Prepare message templates
+    // Prepare message templates using SMS_CONFIG constants
     $student_name = $appointment['first_name'] . ' ' . $appointment['last_name'];
     $counselor_name = $appointment['counselor_name'];
     $date = date('M d, Y', strtotime($appointment['start_time']));
@@ -90,17 +91,33 @@ function sendAppointmentNotification($appointment_id, $event_type) {
     
     $messages = [];
     
-    // Guardian message
+    // Guardian message - USE TEMPLATES
     if ($appointment['guardian_phone']) {
+        require_once __DIR__ . '/../config/sms_config.php'; // Include config for templates
+        
+        $message = '';
         switch ($event_type) {
             case 'booking':
-                $message = "GOMS: Appointment booked for {$student_name} with Counselor {$counselor_name} on {$date} at {$time}. Reply STOP to opt out.";
+                $brief_concern = substr($appointment['concern'] ?? 'Not specified', 0, 50);
+                $message = str_replace(
+                    ['[StudentName]', '[CounselorName]', '[Date]', '[Time]', '[BriefConcern]'],
+                    [$student_name, $counselor_name, $date, $time, $brief_concern],
+                    defined('SMS_BOOKING_TEMPLATE') ? SMS_BOOKING_TEMPLATE : "GOMS: Appointment booked for {$student_name} with Counselor {$counselor_name} on {$date} at {$time}. Case: {$brief_concern}"
+                );
                 break;
             case 'reschedule':
-                $message = "GOMS: Appointment for {$student_name} rescheduled to {$date} at {$time}.";
+                $message = str_replace(
+                    ['[StudentName]', '[Date]', '[Time]'],
+                    [$student_name, $date, $time],
+                    defined('SMS_RESCHEDULE_TEMPLATE') ? SMS_RESCHEDULE_TEMPLATE : "GOMS: Appointment for {$student_name} rescheduled to {$date} at {$time}"
+                );
                 break;
             case 'cancellation':
-                $message = "GOMS: Appointment for {$student_name} on {$date} at {$time} has been cancelled.";
+                $message = str_replace(
+                    ['[StudentName]', '[Date]', '[Time]'],
+                    [$student_name, $date, $time],
+                    defined('SMS_CANCELLATION_TEMPLATE') ? SMS_CANCELLATION_TEMPLATE : "GOMS: Appointment for {$student_name} on {$date} at {$time} has been cancelled"
+                );
                 break;
             default:
                 $message = "GOMS: Appointment update for {$student_name} on {$date} at {$time}.";
@@ -112,9 +129,17 @@ function sendAppointmentNotification($appointment_id, $event_type) {
         ];
     }
     
-    // Adviser message
+    // Adviser message - USE TEMPLATE
     if ($appointment['adviser_phone']) {
-        $message = "GOMS: Appointment for your student {$student_name} has been {$event_type}. Date: {$date}, Time: {$time}, Counselor: {$counselor_name}.";
+        require_once __DIR__ . '/../config/sms_config.php'; // Include config for templates
+        
+        $action = ($event_type === 'booking') ? 'scheduled' : $event_type;
+        $message = str_replace(
+            ['[StudentName]', '[Date]', '[Time]', '[CounselorName]'],
+            [$student_name, $date, $time, $counselor_name],
+            defined('SMS_ADVISER_APPOINTMENT_TEMPLATE') ? SMS_ADVISER_APPOINTMENT_TEMPLATE : "GOMS: Appointment for student {$student_name} has been {$action}. Date: {$date}, Time: {$time}, Counselor: {$counselor_name}"
+        );
+        
         $messages[] = [
             'phone' => $appointment['adviser_phone'],
             'user_id' => $appointment['adviser_user_id'],
@@ -122,15 +147,21 @@ function sendAppointmentNotification($appointment_id, $event_type) {
         ];
     }
     
-    // Send messages
-    require_once __DIR__ . '/sms_helper.php';
+    // Send messages with retry mechanism
     $results = [];
+    $success_count = 0;
+    
+    // Include SMS helper
+    require_once __DIR__ . '/sms_helper.php';
     
     foreach ($messages as $msg) {
-        $results[] = sendSMS($msg['user_id'], $msg['phone'], $msg['message']);
+        // Use retry mechanism
+        $result = sendSMSWithRetry($msg['user_id'], $msg['phone'], $msg['message']);
+        $results[] = $result;
+        if ($result) $success_count++;
     }
     
-    return $results;
+    return $success_count > 0; // Return true if at least one message sent successfully
 }
 
 // Function to get section options for dropdown
@@ -239,17 +270,24 @@ function sanitize_input($data) {
 }
 
 // Function to validate and format phone number
+// Function to validate and format phone number
 function format_phone_number($phone) {
     // Remove all non-numeric characters
     $phone = preg_replace('/[^0-9]/', '', $phone);
     
-    // Check if it's a valid Philippine number
-    if (strlen($phone) === 11 && substr($phone, 0, 2) === '09') {
-        // Convert 09xxxxxxxxx to +639xxxxxxxx
-        $phone = '63' . substr($phone, 1);
-    } elseif (strlen($phone) === 10 && substr($phone, 0, 2) === '9') {
-        // Convert 9xxxxxxxxx to +639xxxxxxxx
-        $phone = '63' . $phone;
+    // For SMS system, we need 639158386852 format
+    // But for display/storage, we might want 09158386852
+    // This function is used for display, so return local format
+    
+    if (strlen($phone) === 12 && substr($phone, 0, 2) === '63') {
+        // Convert 639158386852 to 09158386852 for display
+        return '0' . substr($phone, 2);
+    } elseif (strlen($phone) === 11 && substr($phone, 0, 2) === '09') {
+        // Already in display format
+        return $phone;
+    } elseif (strlen($phone) === 10 && substr($phone, 0, 1) === '9') {
+        // Convert 9xxxxxxxxx to 09xxxxxxxxx
+        return '0' . $phone;
     }
     
     return $phone;

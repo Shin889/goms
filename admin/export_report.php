@@ -33,15 +33,14 @@ logAction($_SESSION['user_id'], 'EXPORT_REPORT', "Exported $report_type report (
 function generateGuidanceOfficeSummary($conn, $start_date, $end_date, $period, $year) {
     $summary = [];
     
-    // 1. CASE STATISTICS
-    // Total new complaints (created within period)
+    // 1. CASE STATISTICS - Using REFERRALS instead of complaints
+    // Total new referrals
     $stmt = $conn->prepare("
         SELECT COUNT(*) as count 
-        FROM complaints 
+        FROM referrals 
         WHERE DATE(created_at) BETWEEN ? AND ?
     ");
     
-    // Check if prepare succeeded
     if (!$stmt) {
         error_log("SQL Error: " . $conn->error);
         $summary['new_cases'] = 0;
@@ -53,23 +52,8 @@ function generateGuidanceOfficeSummary($conn, $start_date, $end_date, $period, $
         $stmt->close();
     }
     
-    // Total referrals
-    $stmt = $conn->prepare("
-        SELECT COUNT(*) as count 
-        FROM referrals 
-        WHERE DATE(created_at) BETWEEN ? AND ?
-    ");
-    
-    if (!$stmt) {
-        error_log("SQL Error (referrals): " . $conn->error);
-        $summary['referrals'] = 0;
-    } else {
-        $stmt->bind_param("ss", $start_date, $end_date);
-        $stmt->execute();
-        $result = $stmt->get_result();
-        $summary['referrals'] = $result->fetch_assoc()['count'] ?? 0;
-        $stmt->close();
-    }
+    // Total referrals (same as above, but keeping for compatibility)
+    $summary['referrals'] = $summary['new_cases'];
     
     // Appointments scheduled
     $stmt = $conn->prepare("
@@ -127,11 +111,11 @@ function generateGuidanceOfficeSummary($conn, $start_date, $end_date, $period, $
         $stmt->close();
     }
     
-    // Total active cases (complaints not closed)
+    // Total active cases (referrals not completed)
     $stmt = $conn->prepare("
         SELECT COUNT(*) as count 
-        FROM complaints 
-        WHERE status != 'closed'
+        FROM referrals 
+        WHERE status NOT IN ('completed', 'cancelled')
     ");
     
     if (!$stmt) {
@@ -144,11 +128,11 @@ function generateGuidanceOfficeSummary($conn, $start_date, $end_date, $period, $
         $stmt->close();
     }
     
-    // Resolved cases (complaints closed within period)
+    // Resolved cases (referrals completed within period)
     $stmt = $conn->prepare("
         SELECT COUNT(*) as count 
-        FROM complaints 
-        WHERE status = 'closed'
+        FROM referrals 
+        WHERE status = 'completed'
         AND DATE(updated_at) BETWEEN ? AND ?
     ");
     
@@ -164,12 +148,12 @@ function generateGuidanceOfficeSummary($conn, $start_date, $end_date, $period, $
     }
     
     // 2. CASELOAD DISTRIBUTION
-    // By grade level
+    // By grade level - from referrals
     $stmt = $conn->prepare("
-        SELECT s.grade_level, COUNT(c.id) as count
-        FROM complaints c
-        JOIN students s ON c.student_id = s.id
-        WHERE DATE(c.created_at) BETWEEN ? AND ?
+        SELECT s.grade_level, COUNT(r.id) as count
+        FROM referrals r
+        JOIN students s ON r.student_id = s.id
+        WHERE DATE(r.created_at) BETWEEN ? AND ?
         GROUP BY s.grade_level
         ORDER BY s.grade_level
     ");
@@ -187,10 +171,10 @@ function generateGuidanceOfficeSummary($conn, $start_date, $end_date, $period, $
         $stmt->close();
     }
     
-    // By concern category
+    // By concern category - from referrals
     $stmt = $conn->prepare("
         SELECT category, COUNT(*) as count
-        FROM complaints
+        FROM referrals
         WHERE DATE(created_at) BETWEEN ? AND ?
         GROUP BY category
         ORDER BY count DESC
@@ -209,16 +193,17 @@ function generateGuidanceOfficeSummary($conn, $start_date, $end_date, $period, $
         $stmt->close();
     }
     
-    // 3. COUNSELOR ACTIVITY
+    // 3. COUNSELOR ACTIVITY - FIXED with your actual schema
     $stmt = $conn->prepare("
         SELECT 
-            co.name as counselor_name,
+            CONCAT(u.full_name, ' - ', c.specialty) as counselor_name,
             COUNT(DISTINCT s.id) as sessions_count,
             COUNT(DISTINCT r.id) as reports_count
-        FROM counselors co
-        LEFT JOIN sessions s ON co.id = s.counselor_id AND DATE(s.start_time) BETWEEN ? AND ?
+        FROM counselors c
+        JOIN users u ON c.user_id = u.id
+        LEFT JOIN sessions s ON c.id = s.counselor_id AND DATE(s.start_time) BETWEEN ? AND ?
         LEFT JOIN reports r ON s.id = r.session_id
-        GROUP BY co.id, co.name
+        GROUP BY c.id, u.full_name, c.specialty
         ORDER BY sessions_count DESC
     ");
     
@@ -235,35 +220,15 @@ function generateGuidanceOfficeSummary($conn, $start_date, $end_date, $period, $
         $stmt->close();
     }
     
-    // 4. INTERVENTIONS PROVIDED
+    // 4. STUDENT DEMOGRAPHICS - from referrals
     $stmt = $conn->prepare("
         SELECT 
-            COUNT(DISTINCT CASE WHEN interventions_used IS NOT NULL THEN s.id END) as with_interventions,
-            COUNT(DISTINCT s.id) as total_sessions
-        FROM sessions s
-        WHERE DATE(start_time) BETWEEN ? AND ?
-    ");
-    
-    $summary['interventions'] = ['with_interventions' => 0, 'total_sessions' => 0];
-    if (!$stmt) {
-        error_log("SQL Error (interventions): " . $conn->error);
-    } else {
-        $stmt->bind_param("ss", $start_date, $end_date);
-        $stmt->execute();
-        $result = $stmt->get_result();
-        $summary['interventions'] = $result->fetch_assoc() ?? ['with_interventions' => 0, 'total_sessions' => 0];
-        $stmt->close();
-    }
-    
-    // 5. STUDENT DEMOGRAPHICS
-    $stmt = $conn->prepare("
-        SELECT 
-            gender,
-            COUNT(DISTINCT c.student_id) as student_count
-        FROM complaints c
-        JOIN students s ON c.student_id = s.id
-        WHERE DATE(c.created_at) BETWEEN ? AND ?
-        GROUP BY gender
+            s.gender,
+            COUNT(DISTINCT r.student_id) as student_count
+        FROM referrals r
+        JOIN students s ON r.student_id = s.id
+        WHERE DATE(r.created_at) BETWEEN ? AND ?
+        GROUP BY s.gender
     ");
     
     $summary['demographics'] = [];
@@ -275,6 +240,56 @@ function generateGuidanceOfficeSummary($conn, $start_date, $end_date, $period, $
         $result = $stmt->get_result();
         while ($row = $result->fetch_assoc()) {
             $summary['demographics'][] = $row;
+        }
+        $stmt->close();
+    }
+    
+    // 5. ADDITIONAL STATISTICS for your system
+    // Total active students
+    $stmt = $conn->prepare("SELECT COUNT(*) as count FROM students WHERE status = 'active'");
+    $stmt->execute();
+    $result = $stmt->get_result();
+    $summary['total_students'] = $result->fetch_assoc()['count'] ?? 0;
+    $stmt->close();
+    
+    // Referral status breakdown
+    $stmt = $conn->prepare("
+        SELECT status, COUNT(*) as count
+        FROM referrals
+        WHERE DATE(created_at) BETWEEN ? AND ?
+        GROUP BY status
+    ");
+    
+    $summary['referral_status'] = [];
+    if (!$stmt) {
+        error_log("SQL Error (referral_status): " . $conn->error);
+    } else {
+        $stmt->bind_param("ss", $start_date, $end_date);
+        $stmt->execute();
+        $result = $stmt->get_result();
+        while ($row = $result->fetch_assoc()) {
+            $summary['referral_status'][] = $row;
+        }
+        $stmt->close();
+    }
+    
+    // Appointment status breakdown
+    $stmt = $conn->prepare("
+        SELECT status, COUNT(*) as count
+        FROM appointments
+        WHERE DATE(created_at) BETWEEN ? AND ?
+        GROUP BY status
+    ");
+    
+    $summary['appointment_status'] = [];
+    if (!$stmt) {
+        error_log("SQL Error (appointment_status): " . $conn->error);
+    } else {
+        $stmt->bind_param("ss", $start_date, $end_date);
+        $stmt->execute();
+        $result = $stmt->get_result();
+        while ($row = $result->fetch_assoc()) {
+            $summary['appointment_status'][] = $row;
         }
         $stmt->close();
     }
