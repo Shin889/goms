@@ -343,9 +343,9 @@ $reports_count = $reports_result->fetch_assoc()['monthly_reports'];
               <i class="fas fa-calendar-times"></i>
               <h3>No Upcoming Appointments</h3>
               <p>You don't have any scheduled appointments.</p>
-              <a href="appointments.php" class="start-session-btn" style="margin-top: 15px;">
+              <!-- <a href="appointments.php" class="start-session-btn" style="margin-top: 15px;">
                 <i class="fas fa-calendar-plus"></i> Schedule Now
-              </a>
+              </a> -->
             </div>
           <?php endif; ?>
         </div>

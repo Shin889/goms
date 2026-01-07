@@ -302,22 +302,22 @@ error_log("Students count: " . count($students));
             </select>
           </div>
           
-          <div class="filter-group">
+          <!-- <div class="filter-group">
             <label class="filter-label">Date Range</label>
             <div class="filter-row">
               <input type="date" name="date_from" class="filter-input" value="<?= htmlspecialchars($filter_date_from); ?>" placeholder="From">
               <input type="date" name="date_to" class="filter-input" value="<?= htmlspecialchars($filter_date_to); ?>" placeholder="To">
             </div>
-          </div>
+          </div> -->
           
-          <div class="filter-group">
+          <!-- <div class="filter-group">
             <label class="filter-label">Search</label>
             <div class="filter-row">
               <input type="text" name="search" class="filter-input" placeholder="Search notes, location..." value="<?= htmlspecialchars($search); ?>">
               <button type="submit" class="btn-filter">Filter</button>
               <a href="sessions.php" class="btn-reset">Reset</a>
             </div>
-          </div>
+          </div> -->
         </div>
       </form>
     </div>

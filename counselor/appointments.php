@@ -255,9 +255,9 @@ if (isset($_GET['get_calendar_events'])) {
                     <h1 class="page-title">Appointments</h1>
                     <p class="page-subtitle">Manage and track counseling appointments assigned to you.</p>
                 </div>
-                <button class="btn" onclick="document.getElementById('createModal').style.display='flex'">
+                <!-- <button class="btn" onclick="document.getElementById('createModal').style.display='flex'">
                     <i class="fas fa-plus-circle"></i> New Appointment
-                </button>
+                </button> -->
             </div>
 
             <?php if (isset($_SESSION['msg'])): 
